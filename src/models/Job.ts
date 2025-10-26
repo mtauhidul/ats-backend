@@ -7,8 +7,8 @@ export interface IJob extends Document {
   requirements: string[];
   responsibilities: string[];
   location: string;
-  locationType: 'on-site' | 'hybrid' | 'remote';
-  jobType: 'full-time' | 'part-time' | 'contract' | 'internship';
+  locationType: 'onsite' | 'hybrid' | 'remote';
+  jobType: 'full_time' | 'part_time' | 'contract' | 'internship';
   experienceLevel: 'entry' | 'mid' | 'senior' | 'lead' | 'executive';
   salaryRange?: {
     min: number;
@@ -20,7 +20,7 @@ export interface IJob extends Document {
   pipelineId?: mongoose.Types.ObjectId;
   categoryIds: mongoose.Types.ObjectId[];
   tagIds: mongoose.Types.ObjectId[];
-  status: 'draft' | 'open' | 'closed' | 'on-hold';
+  status: 'draft' | 'open' | 'closed' | 'on_hold';
   openings: number;
   applicationDeadline?: Date;
   startDate?: Date;
@@ -64,13 +64,13 @@ const JobSchema = new Schema<IJob>(
     },
     locationType: {
       type: String,
-      enum: ['on-site', 'hybrid', 'remote'],
+      enum: ['onsite', 'hybrid', 'remote'],
       required: true,
       index: true,
     },
     jobType: {
       type: String,
-      enum: ['full-time', 'part-time', 'contract', 'internship'],
+      enum: ['full_time', 'part_time', 'contract', 'internship'],
       required: true,
       index: true,
     },
@@ -110,7 +110,7 @@ const JobSchema = new Schema<IJob>(
     }],
     status: {
       type: String,
-      enum: ['draft', 'open', 'closed', 'on-hold'],
+      enum: ['draft', 'open', 'closed', 'on_hold'],
       default: 'draft',
       index: true,
     },

@@ -85,6 +85,24 @@ router.put(
 );
 
 /**
+ * @route   PATCH /api/applications/:id
+ * @desc    Update application (partial update)
+ * @access  Recruiter, Admin, Super Admin
+ */
+router.patch(
+  '/:id',
+  requireRole('recruiter', 'admin', 'super_admin'),
+  validate(updateApplicationSchema),
+  updateApplication
+);
+
+/**
+ * @route   DELETE /api/applications/:id
+ * @desc    Delete application
+ * @access  Admin, Super Admin
+```
+
+/**
  * @route   DELETE /api/applications/:id
  * @desc    Delete application
  * @access  Admin, Super Admin

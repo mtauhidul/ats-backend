@@ -101,6 +101,18 @@ router.put(
 );
 
 /**
+ * @route   PATCH /api/candidates/:id
+ * @desc    Update candidate (partial update)
+ * @access  Recruiter, Admin, Super Admin
+ */
+router.patch(
+  '/:id',
+  requireRole('recruiter', 'admin', 'super_admin'),
+  validate(updateCandidateSchema),
+  updateCandidate
+);
+
+/**
  * @route   DELETE /api/candidates/:id
  * @desc    Delete candidate
  * @access  Admin, Super Admin

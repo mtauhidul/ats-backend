@@ -20,7 +20,29 @@ import {
 
 const router = express.Router();
 
-// All routes require authentication
+/**
+ * @route   GET /api/jobs
+ * @desc    Get all jobs with filters (Public - can view open jobs)
+ * @access  Public
+ */
+router.get(
+  '/',
+  validate(listJobsSchema),
+  getJobs
+);
+
+/**
+ * @route   GET /api/jobs/:id
+ * @desc    Get job by ID (Public - can view job details)
+ * @access  Public
+ */
+router.get(
+  '/:id',
+  validate(jobIdSchema),
+  getJobById
+);
+
+// All routes below require authentication
 router.use(authenticate);
 
 /**
@@ -36,17 +58,6 @@ router.post(
 );
 
 /**
- * @route   GET /api/jobs
- * @desc    Get all jobs with filters
- * @access  All authenticated users
- */
-router.get(
-  '/',
-  validate(listJobsSchema),
-  getJobs
-);
-
-/**
  * @route   GET /api/jobs/stats
  * @desc    Get job statistics
  * @access  Recruiter, Admin, Super Admin, Hiring Manager
@@ -58,22 +69,23 @@ router.get(
 );
 
 /**
- * @route   GET /api/jobs/:id
- * @desc    Get job by ID
- * @access  All authenticated users
- */
-router.get(
-  '/:id',
-  validate(jobIdSchema),
-  getJobById
-);
-
-/**
  * @route   PUT /api/jobs/:id
  * @desc    Update job
  * @access  Recruiter, Admin, Super Admin
  */
 router.put(
+  '/:id',
+  requireRole('recruiter', 'admin', 'super_admin'),
+  validate(updateJobSchema),
+  updateJob
+);
+
+/**
+ * @route   PATCH /api/jobs/:id
+ * @desc    Update job (partial update)
+ * @access  Recruiter, Admin, Super Admin
+ */
+router.patch(
   '/:id',
   requireRole('recruiter', 'admin', 'super_admin'),
   validate(updateJobSchema),

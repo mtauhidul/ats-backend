@@ -11,6 +11,7 @@ router.post('/', requireRole('admin', 'super_admin'), validate(createTagSchema),
 router.get('/', getTags);
 router.get('/:id', validate(tagIdSchema), getTagById);
 router.put('/:id', requireRole('admin', 'super_admin'), validate(updateTagSchema), updateTag);
+router.patch('/:id', requireRole('admin', 'super_admin'), validate(updateTagSchema), updateTag);
 router.delete('/:id', requireRole('admin', 'super_admin'), validate(tagIdSchema), deleteTag);
 
 export default router;

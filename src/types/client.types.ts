@@ -7,7 +7,7 @@ import { z } from 'zod';
 // Create Client Schema
 export const createClientSchema = z.object({
   body: z.object({
-    name: z.string().min(1, 'Client name is required'),
+    companyName: z.string().min(1, 'Company name is required'),
     industry: z.string().optional(),
     website: z.string().url('Invalid URL').optional(),
     logo: z.string().url('Invalid URL').optional(),
@@ -26,7 +26,7 @@ export const updateClientSchema = z.object({
     id: z.string().min(1, 'Client ID is required'),
   }),
   body: z.object({
-    name: z.string().min(1).optional(),
+    companyName: z.string().min(1).optional(),
     industry: z.string().optional(),
     website: z.string().url().optional(),
     logo: z.string().url().optional(),

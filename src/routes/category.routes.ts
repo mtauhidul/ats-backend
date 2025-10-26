@@ -11,6 +11,7 @@ router.post('/', requireRole('admin', 'super_admin'), validate(createCategorySch
 router.get('/', getCategories);
 router.get('/:id', validate(categoryIdSchema), getCategoryById);
 router.put('/:id', requireRole('admin', 'super_admin'), validate(updateCategorySchema), updateCategory);
+router.patch('/:id', requireRole('admin', 'super_admin'), validate(updateCategorySchema), updateCategory);
 router.delete('/:id', requireRole('admin', 'super_admin'), validate(categoryIdSchema), deleteCategory);
 
 export default router;

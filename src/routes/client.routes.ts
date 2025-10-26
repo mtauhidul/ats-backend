@@ -79,6 +79,18 @@ router.put(
 );
 
 /**
+ * @route   PATCH /api/clients/:id
+ * @desc    Update client (partial update)
+ * @access  Admin, Super Admin
+ */
+router.patch(
+  '/:id',
+  requireRole('admin', 'super_admin'),
+  validate(updateClientSchema),
+  updateClient
+);
+
+/**
  * @route   DELETE /api/clients/:id
  * @desc    Delete client
  * @access  Admin, Super Admin

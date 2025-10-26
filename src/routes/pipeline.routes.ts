@@ -78,6 +78,18 @@ router.put(
 );
 
 /**
+ * @route   PATCH /api/pipelines/:id
+ * @desc    Update pipeline (partial update)
+ * @access  Admin, Super Admin
+ */
+router.patch(
+  '/:id',
+  requireRole('admin', 'super_admin'),
+  validate(updatePipelineSchema),
+  updatePipeline
+);
+
+/**
  * @route   DELETE /api/pipelines/:id
  * @desc    Delete pipeline
  * @access  Admin, Super Admin

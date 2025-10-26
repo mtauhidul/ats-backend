@@ -15,3 +15,5 @@ export { Tag, ITag } from './Tag';
 export { Pipeline, IPipeline, IPipelineStage } from './Pipeline';
 export { TeamMember, ITeamMember } from './TeamMember';
 export { EmailAccount, IEmailAccount } from './EmailAccount';
+export { Notification, INotification } from './Notification';
+export { Message, IMessage } from './Message';

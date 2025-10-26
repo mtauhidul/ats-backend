@@ -16,12 +16,12 @@ export const createClient = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const data: CreateClientInput = req.body;
 
-    // Check for duplicate client by name
-    const existingClient = await Client.findOne({ name: data.name });
+    // Check for duplicate client by companyName
+    const existingClient = await Client.findOne({ companyName: data.companyName });
 
     if (existingClient) {
       throw new CustomValidationError(
-        `Client already exists with name: ${data.name}`
+        `Client already exists with name: ${data.companyName}`
       );
     }
 
@@ -31,7 +31,7 @@ export const createClient = asyncHandler(
       createdBy: req.user?._id,
     });
 
-    logger.info(`Client created: ${client.name} by user ${req.user?._id}`);
+    logger.info(`Client created: ${client.companyName} by user ${req.user?._id}`);
 
     successResponse(res, client, 'Client created successfully', 201);
   }
@@ -59,7 +59,7 @@ export const getClients = asyncHandler(
 
     if (search) {
       filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
+        { companyName: { $regex: search, $options: 'i' } },
         { contactEmail: { $regex: search, $options: 'i' } },
         { contactPerson: { $regex: search, $options: 'i' } },
       ];
@@ -143,16 +143,16 @@ export const updateClient = asyncHandler(
       throw new NotFoundError('Client not found');
     }
 
-    // Check if name is being changed and if it creates a duplicate
-    if (updates.name && updates.name !== client.name) {
+    // Check if companyName is being changed and if it creates a duplicate
+    if (updates.companyName && updates.companyName !== client.companyName) {
       const existingClient = await Client.findOne({
-        name: updates.name,
+        companyName: updates.companyName,
         _id: { $ne: id },
       });
 
       if (existingClient) {
         throw new CustomValidationError(
-          `Client already exists with name: ${updates.name}`
+          `Client already exists with name: ${updates.companyName}`
         );
       }
     }
@@ -162,7 +162,7 @@ export const updateClient = asyncHandler(
     client.updatedBy = req.user?._id as any;
     await client.save();
 
-    logger.info(`Client updated: ${client.name}`);
+    logger.info(`Client updated: ${client.companyName}`);
 
     successResponse(res, client, 'Client updated successfully');
   }
@@ -193,7 +193,7 @@ export const deleteClient = asyncHandler(
 
     await client.deleteOne();
 
-    logger.info(`Client deleted: ${client.name}`);
+    logger.info(`Client deleted: ${client.companyName}`);
 
     successResponse(res, null, 'Client deleted successfully');
   }
