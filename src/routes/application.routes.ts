@@ -7,6 +7,7 @@ import {
   deleteApplication,
   approveApplication,
   bulkUpdateStatus,
+  bulkDeleteApplications,
   getApplicationStats,
 } from '../controllers/application.controller';
 import { authenticate, requireRole } from '../middleware/auth';
@@ -136,6 +137,17 @@ router.post(
   requireRole('recruiter', 'admin', 'super_admin'),
   validate(bulkUpdateStatusSchema),
   bulkUpdateStatus
+);
+
+/**
+ * @route   POST /api/applications/bulk/delete
+ * @desc    Bulk delete applications
+ * @access  Admin, Super Admin
+ */
+router.post(
+  '/bulk/delete',
+  requireRole('admin', 'super_admin'),
+  bulkDeleteApplications
 );
 
 export default router;

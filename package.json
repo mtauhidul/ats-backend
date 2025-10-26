@@ -25,7 +25,9 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@affinda/affinda": "^7.7.0",
     "@clerk/clerk-sdk-node": "^5.0.0",
+    "@types/sharp": "^0.31.1",
     "axios": "^1.6.2",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.0.0",

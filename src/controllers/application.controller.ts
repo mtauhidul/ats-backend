@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { Application, Candidate, Job, Pipeline } from '../models';
 import openaiService from '../services/openai.service';
+import cloudinaryService from '../services/cloudinary.service';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
 import { NotFoundError, ValidationError as CustomValidationError } from '../utils/errors';
 import logger from '../utils/logger';
@@ -14,6 +15,23 @@ import {
 } from '../types/application.types';
 
 /**
+ * Transform application for frontend compatibility
+ * Maps backend field names to frontend expected names
+ */
+const transformApplication = (app: any) => {
+  const transformed = app.toObject ? app.toObject() : app;
+  
+  return {
+    ...transformed,
+    id: transformed._id,
+    targetJobId: transformed.jobId || null,
+    targetClientId: transformed.clientId || null,
+    submittedAt: transformed.appliedAt || transformed.createdAt,
+    lastUpdated: transformed.updatedAt,
+  };
+};
+
+/**
  * Create new application
  * Supports all three submission methods
  */
@@ -21,22 +39,31 @@ export const createApplication = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const data: CreateApplicationInput = req.body;
 
-    // Verify job exists
-    const job = await Job.findById(data.jobId);
-    if (!job) {
-      throw new NotFoundError('Job not found');
-    }
+    let job = null;
 
-    // Check for duplicate application
-    const existingApplication = await Application.findOne({
-      jobId: data.jobId,
-      email: data.email,
-    });
+    // Verify job exists if jobId is provided
+    if (data.jobId) {
+      job = await Job.findById(data.jobId);
+      if (!job) {
+        throw new NotFoundError('Job not found');
+      }
 
-    if (existingApplication) {
-      throw new CustomValidationError(
-        `Application already exists for this job with email: ${data.email}`
-      );
+      // Check for duplicate application for this job
+      const existingApplication = await Application.findOne({
+        jobId: data.jobId,
+        email: data.email,
+      });
+
+      if (existingApplication) {
+        throw new CustomValidationError(
+          `Application already exists for this job with email: ${data.email}`
+        );
+      }
+
+      // Set clientId from job if not provided
+      if (!data.clientId && job.clientId) {
+        data.clientId = job.clientId.toString();
+      }
     }
 
     // If email_automation source, verify sourceEmailAccountId is provided
@@ -47,23 +74,21 @@ export const createApplication = asyncHandler(
     }
 
     // Create application
-    const application = await Application.create({
-      ...data,
-      clientId: data.clientId || job.clientId,
-    });
+    const application = await Application.create(data);
 
     // Populate references
     await application.populate([
       { path: 'jobId', select: 'title location employmentType' },
-      { path: 'clientId', select: 'name logo' },
+      { path: 'clientId', select: 'companyName logo' },
       { path: 'sourceEmailAccountId', select: 'name email' },
     ]);
 
+    const jobInfo = job ? `for job ${job.title}` : 'without job assignment';
     logger.info(
-      `Application created: ${application.email} for job ${job.title} via ${data.source}`
+      `Application created: ${application.email} ${jobInfo} via ${data.source}`
     );
 
-    successResponse(res, application, 'Application created successfully', 201);
+    successResponse(res, transformApplication(application), 'Application created successfully', 201);
   }
 );
 
@@ -128,7 +153,7 @@ export const getApplications = asyncHandler(
     successResponse(
       res,
       {
-        applications,
+        applications: applications.map(transformApplication),
         pagination,
       },
       'Applications retrieved successfully'
@@ -153,7 +178,7 @@ export const getApplicationById = asyncHandler(
       throw new NotFoundError('Application not found');
     }
 
-    successResponse(res, application, 'Application retrieved successfully');
+    successResponse(res, transformApplication(application), 'Application retrieved successfully');
   }
 );
 
@@ -198,7 +223,7 @@ export const updateApplication = asyncHandler(
 
     logger.info(`Application updated: ${application.email}`);
 
-    successResponse(res, application, 'Application updated successfully');
+    successResponse(res, transformApplication(application), 'Application updated successfully');
   }
 );
 
@@ -223,6 +248,50 @@ export const deleteApplication = asyncHandler(
       );
     }
 
+    // Delete resume from Cloudinary if exists
+    if (application.resumeUrl) {
+      try {
+        // Extract public ID from Cloudinary URL
+        // URL format: https://res.cloudinary.com/{cloud_name}/{resource_type}/upload/{version}/{public_id}.{format}
+        const urlParts = application.resumeUrl.split('/');
+        const uploadIndex = urlParts.indexOf('upload');
+        if (uploadIndex !== -1 && urlParts.length > uploadIndex + 1) {
+          // Get everything after 'upload/' and before the file extension
+          const publicIdWithExtension = urlParts.slice(uploadIndex + 2).join('/');
+          const publicId = publicIdWithExtension.split('.')[0];
+          
+          await cloudinaryService.deleteFile(publicId, 'raw');
+          logger.info(`Deleted resume from Cloudinary: ${publicId}`);
+        }
+      } catch (error) {
+        logger.error('Error deleting resume from Cloudinary:', error);
+        // Continue with application deletion even if Cloudinary deletion fails
+      }
+    }
+
+    // Delete additional documents from Cloudinary if exists
+    if (application.additionalDocuments && application.additionalDocuments.length > 0) {
+      for (const doc of application.additionalDocuments) {
+        if (doc.url) {
+          try {
+            const urlParts = doc.url.split('/');
+            const uploadIndex = urlParts.indexOf('upload');
+            if (uploadIndex !== -1 && urlParts.length > uploadIndex + 1) {
+              const publicIdWithExtension = urlParts.slice(uploadIndex + 2).join('/');
+              const publicId = publicIdWithExtension.split('.')[0];
+              
+              await cloudinaryService.deleteFile(publicId, 'raw');
+              logger.info(`Deleted document from Cloudinary: ${publicId}`);
+            }
+          } catch (error) {
+            logger.error('Error deleting document from Cloudinary:', error);
+            // Continue with deletion
+          }
+        }
+      }
+    }
+
+    // Delete application from database
     await application.deleteOne();
 
     logger.info(`Application deleted: ${application.email}`);
@@ -379,6 +448,96 @@ export const bulkUpdateStatus = asyncHandler(
         status,
       },
       `Successfully updated ${result.modifiedCount} applications`
+    );
+  }
+);
+
+/**
+ * Bulk delete applications
+ */
+export const bulkDeleteApplications = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const { applicationIds }: { applicationIds: string[] } = req.body;
+
+    // Validate all IDs
+    const validIds = applicationIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (validIds.length !== applicationIds.length) {
+      throw new CustomValidationError('Some application IDs are invalid');
+    }
+
+    // Get all applications to delete
+    const applications = await Application.find({ _id: { $in: validIds } });
+
+    if (applications.length === 0) {
+      throw new NotFoundError('No applications found with provided IDs');
+    }
+
+    // Check if any application has been approved (converted to candidate)
+    const candidateCheck = await Candidate.findOne({ 
+      applicationId: { $in: validIds } 
+    });
+    
+    if (candidateCheck) {
+      throw new CustomValidationError(
+        'Cannot delete applications that have been approved as candidates'
+      );
+    }
+
+    let deletedFilesCount = 0;
+
+    // Delete files from Cloudinary for each application
+    for (const application of applications) {
+      // Delete resume from Cloudinary if exists
+      if (application.resumeUrl) {
+        try {
+          const urlParts = application.resumeUrl.split('/');
+          const uploadIndex = urlParts.indexOf('upload');
+          if (uploadIndex !== -1 && urlParts.length > uploadIndex + 1) {
+            const publicIdWithExtension = urlParts.slice(uploadIndex + 2).join('/');
+            const publicId = publicIdWithExtension.split('.')[0];
+            
+            await cloudinaryService.deleteFile(publicId, 'raw');
+            deletedFilesCount++;
+          }
+        } catch (error) {
+          logger.error(`Error deleting resume from Cloudinary for application ${application._id}:`, error);
+        }
+      }
+
+      // Delete additional documents from Cloudinary if exists
+      if (application.additionalDocuments && application.additionalDocuments.length > 0) {
+        for (const doc of application.additionalDocuments) {
+          if (doc.url) {
+            try {
+              const urlParts = doc.url.split('/');
+              const uploadIndex = urlParts.indexOf('upload');
+              if (uploadIndex !== -1 && urlParts.length > uploadIndex + 1) {
+                const publicIdWithExtension = urlParts.slice(uploadIndex + 2).join('/');
+                const publicId = publicIdWithExtension.split('.')[0];
+                
+                await cloudinaryService.deleteFile(publicId, 'raw');
+                deletedFilesCount++;
+              }
+            } catch (error) {
+              logger.error(`Error deleting document from Cloudinary:`, error);
+            }
+          }
+        }
+      }
+    }
+
+    // Delete all applications from database
+    const result = await Application.deleteMany({ _id: { $in: validIds } });
+
+    logger.info(`Bulk deleted ${result.deletedCount} applications and ${deletedFilesCount} files from Cloudinary`);
+
+    successResponse(
+      res,
+      {
+        deletedCount: result.deletedCount,
+        deletedFilesCount,
+      },
+      `Successfully deleted ${result.deletedCount} applications`
     );
   }
 );

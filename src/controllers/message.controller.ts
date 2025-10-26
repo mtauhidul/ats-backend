@@ -1,6 +1,6 @@
-import { Request, Response } from 'express';
-import { Message } from '../models';
-import logger from '../utils/logger';
+import { Request, Response } from "express";
+import { Message } from "../models";
+import logger from "../utils/logger";
 
 // Generate conversationId from two user IDs (sorted to ensure consistency)
 function generateConversationId(userId1: string, userId2: string): string {
@@ -40,10 +40,18 @@ export const getMessages = async (req: Request, res: Response) => {
       if (!conversationsMap.has(conversationId)) {
         // Determine the other participant
         const isCurrentUserSender = msg.senderId === userId;
-        const participantId = isCurrentUserSender ? msg.recipientId : msg.senderId;
-        const participantName = isCurrentUserSender ? msg.recipientName : msg.senderName;
-        const participantAvatar = isCurrentUserSender ? msg.recipientAvatar : msg.senderAvatar;
-        const participantRole = isCurrentUserSender ? msg.recipientRole : msg.senderRole;
+        const participantId = isCurrentUserSender
+          ? msg.recipientId
+          : msg.senderId;
+        const participantName = isCurrentUserSender
+          ? msg.recipientName
+          : msg.senderName;
+        const participantAvatar = isCurrentUserSender
+          ? msg.recipientAvatar
+          : msg.senderAvatar;
+        const participantRole = isCurrentUserSender
+          ? msg.recipientRole
+          : msg.senderRole;
 
         conversationsMap.set(conversationId, {
           id: conversationId,
@@ -70,7 +78,7 @@ export const getMessages = async (req: Request, res: Response) => {
     const conversations = Array.from(conversationsMap.values());
 
     res.status(200).json({
-      status: 'success',
+      status: "success",
       data: {
         messages: transformedMessages,
         conversations,
@@ -78,10 +86,10 @@ export const getMessages = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    logger.error('Error fetching messages:', error);
+    logger.error("Error fetching messages:", error);
     res.status(500).json({
-      status: 'error',
-      message: 'Failed to fetch messages',
+      status: "error",
+      message: "Failed to fetch messages",
       error: error.message,
     });
   }
@@ -102,8 +110,8 @@ export const getMessageById = async (req: Request, res: Response) => {
 
     if (!message) {
       return res.status(404).json({
-        status: 'error',
-        message: 'Message not found',
+        status: "error",
+        message: "Message not found",
       });
     }
 
@@ -116,14 +124,14 @@ export const getMessageById = async (req: Request, res: Response) => {
     };
 
     res.status(200).json({
-      status: 'success',
+      status: "success",
       data: transformedMessage,
     });
   } catch (error: any) {
-    logger.error('Error fetching message:', error);
+    logger.error("Error fetching message:", error);
     res.status(500).json({
-      status: 'error',
-      message: 'Failed to fetch message',
+      status: "error",
+      message: "Failed to fetch message",
       error: error.message,
     });
   }
@@ -139,8 +147,8 @@ export const sendMessage = async (req: Request, res: Response) => {
 
     if (!user) {
       return res.status(401).json({
-        status: 'error',
-        message: 'User not authenticated',
+        status: "error",
+        message: "User not authenticated",
       });
     }
 
@@ -162,11 +170,11 @@ export const sendMessage = async (req: Request, res: Response) => {
       senderId: userId,
       senderName: `${user.firstName} ${user.lastName}`.trim() || user.email,
       senderRole: user.role,
-      senderAvatar: user.avatar || '',
+      senderAvatar: user.avatar || "",
       recipientId,
       recipientName,
       recipientRole,
-      recipientAvatar: recipientAvatar || '',
+      recipientAvatar: recipientAvatar || "",
       message: messageText,
       read: false,
       sentAt: new Date(),
@@ -183,14 +191,14 @@ export const sendMessage = async (req: Request, res: Response) => {
     logger.info(`Message sent from ${userId} to ${recipientId}`);
 
     res.status(201).json({
-      status: 'success',
+      status: "success",
       data: transformedMessage,
     });
   } catch (error: any) {
-    logger.error('Error sending message:', error);
+    logger.error("Error sending message:", error);
     res.status(500).json({
-      status: 'error',
-      message: 'Failed to send message',
+      status: "error",
+      message: "Failed to send message",
       error: error.message,
     });
   }
@@ -214,8 +222,8 @@ export const updateMessage = async (req: Request, res: Response) => {
 
     if (!message) {
       return res.status(404).json({
-        status: 'error',
-        message: 'Message not found or you are not the recipient',
+        status: "error",
+        message: "Message not found or you are not the recipient",
       });
     }
 
@@ -228,14 +236,14 @@ export const updateMessage = async (req: Request, res: Response) => {
     };
 
     res.status(200).json({
-      status: 'success',
+      status: "success",
       data: transformedMessage,
     });
   } catch (error: any) {
-    logger.error('Error updating message:', error);
+    logger.error("Error updating message:", error);
     res.status(500).json({
-      status: 'error',
-      message: 'Failed to update message',
+      status: "error",
+      message: "Failed to update message",
       error: error.message,
     });
   }
@@ -257,20 +265,20 @@ export const deleteMessage = async (req: Request, res: Response) => {
 
     if (!message) {
       return res.status(404).json({
-        status: 'error',
-        message: 'Message not found or you are not the sender',
+        status: "error",
+        message: "Message not found or you are not the sender",
       });
     }
 
     res.status(200).json({
-      status: 'success',
-      message: 'Message deleted successfully',
+      status: "success",
+      message: "Message deleted successfully",
     });
   } catch (error: any) {
-    logger.error('Error deleting message:', error);
+    logger.error("Error deleting message:", error);
     res.status(500).json({
-      status: 'error',
-      message: 'Failed to delete message',
+      status: "error",
+      message: "Failed to delete message",
       error: error.message,
     });
   }
@@ -300,17 +308,17 @@ export const getConversationMessages = async (req: Request, res: Response) => {
     }));
 
     res.status(200).json({
-      status: 'success',
+      status: "success",
       data: {
         messages: transformedMessages,
         total: transformedMessages.length,
       },
     });
   } catch (error: any) {
-    logger.error('Error fetching conversation messages:', error);
+    logger.error("Error fetching conversation messages:", error);
     res.status(500).json({
-      status: 'error',
-      message: 'Failed to fetch conversation messages',
+      status: "error",
+      message: "Failed to fetch conversation messages",
       error: error.message,
     });
   }
@@ -334,14 +342,14 @@ export const markConversationAsRead = async (req: Request, res: Response) => {
     );
 
     res.status(200).json({
-      status: 'success',
-      message: 'All messages in conversation marked as read',
+      status: "success",
+      message: "All messages in conversation marked as read",
     });
   } catch (error: any) {
-    logger.error('Error marking conversation as read:', error);
+    logger.error("Error marking conversation as read:", error);
     res.status(500).json({
-      status: 'error',
-      message: 'Failed to mark conversation as read',
+      status: "error",
+      message: "Failed to mark conversation as read",
       error: error.message,
     });
   }

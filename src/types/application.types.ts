@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 export const createApplicationSchema = z.object({
   body: z.object({
-    jobId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid job ID format'),
+    jobId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid job ID format').optional(),
     clientId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid client ID format').optional(),
     source: z.enum(['manual', 'direct_apply', 'email_automation'], {
       errorMap: () => ({ message: 'Source must be manual, direct_apply, or email_automation' }),
@@ -17,8 +17,8 @@ export const createApplicationSchema = z.object({
     lastName: z.string().min(1, 'Last name is required'),
     email: z.string().email('Invalid email address'),
     phone: z.string().optional(),
-    resumeUrl: z.string().url('Invalid resume URL'),
-    resumeOriginalName: z.string().min(1, 'Resume filename is required'),
+    resumeUrl: z.string().url('Invalid resume URL').optional(),
+    resumeOriginalName: z.string().min(1, 'Resume filename is required').optional(),
     coverLetter: z.string().optional(),
     status: z.enum(['pending', 'reviewing', 'shortlisted', 'rejected', 'approved']).default('pending'),
     notes: z.string().optional(),
@@ -30,6 +30,11 @@ export const createApplicationSchema = z.object({
       education: z.array(z.any()).optional(),
       languages: z.array(z.string()).optional(),
       certifications: z.array(z.string()).optional(),
+    }).optional(),
+    aiAnalysis: z.object({
+      isValid: z.boolean().optional(),
+      matchScore: z.number().optional(),
+      summary: z.string().optional(),
     }).optional(),
   }),
 });

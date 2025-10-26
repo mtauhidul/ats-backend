@@ -19,6 +19,9 @@ export interface ParsedResume {
     linkedin?: string;
     website?: string;
   };
+  currentTitle?: string;
+  currentCompany?: string;
+  yearsOfExperience?: number;
   summary?: string;
   skills?: string[];
   experience?: Array<{
@@ -99,44 +102,112 @@ class OpenAIService {
   async parseResume(resumeText: string): Promise<ParsedResume> {
     try {
             const prompt = `
-Extract structured information from this resume text and return as JSON:
+You are an expert ATS resume parser. Extract ALL relevant information from this resume and return as JSON.
 
+RESUME TEXT:
 ${resumeText}
 
-Return the following JSON structure (omit fields if not found):
+CRITICAL EXTRACTION RULES:
+
+1. PERSONAL INFO (MANDATORY):
+   - Extract first name and last name (clean up ALL CAPS, weird spacing like "MMOOINNNUURR" → "Moinur")
+   - Find email (pattern: contains @)
+   - Find phone (any format: +880-xxx, 09xxx, etc.)
+   - Extract full address if present
+   - Find LinkedIn URL (even if just username after "LinkedIn:")
+   - Find portfolio/website URL
+
+2. SKILLS (VERY IMPORTANT - DON'T MISS ANY):
+   - Look in sections: SKILLS, TECHNICAL SKILLS, TOOLS, SOFTWARE, COMPETENCIES
+   - Skills can be:
+     * Pipe-separated: "R | Python | SQL"
+     * Comma-separated: "R, Python, SQL"
+     * Listed with bullets
+     * In "Language and Software:" sections
+   - Extract EVERY SINGLE skill mentioned
+   - Include programming languages, software, tools, technical skills
+   - Examples: R, Python, SQL, SPSS, STATA, Excel, LaTeX, Kobo Toolbox, etc.
+
+3. CURRENT POSITION (derive from most recent work):
+   - currentTitle: Most recent job title
+   - currentCompany: Most recent company name
+   - Calculate yearsOfExperience by counting total work duration
+
+4. WORK EXPERIENCE (extract ALL positions):
+   - Look for sections: WORK EXPERIENCE, EMPLOYMENT, RESEARCH EXPERIENCE, etc.
+   - For EACH position extract:
+     * Company name
+     * Job title
+     * Duration (standardize dates: "Apr 2025 - Present", "Feb 2024 - Feb 2025")
+     * Key responsibilities (bullet points)
+   - Don't skip research positions, internships, or assistant roles
+
+5. EDUCATION (extract ALL degrees):
+   - Look for: Bachelor, Master, PhD, HSC, SSC, High School, etc.
+   - Extract:
+     * Institution name
+     * Degree name
+     * Field of study
+     * Year or date range
+     * GPA/CGPA if mentioned
+
+6. ADDITIONAL INFO:
+   - Certifications: workshops, trainings, courses
+   - Languages: spoken languages (English, Bengali, etc.)
+   - Summary: extract objective/summary statement if present
+
+DATE FORMATS TO HANDLE:
+- "Feb 2024 – Feb 2025"
+- "Apr 2025 – Present"
+- "March2023uptoJuly2024"
+- "2018-2024"
+- Standardize ALL to: "Month Year - Month Year" or "Month Year - Present"
+
+RETURN THIS EXACT JSON STRUCTURE:
 {
   "personalInfo": {
-    "firstName": "First name",
-    "lastName": "Last name",
-    "email": "email@example.com",
-    "phone": "Phone number",
-    "location": "City, State/Country",
-    "linkedin": "LinkedIn URL",
-    "website": "Personal website URL"
+    "firstName": "First name (cleaned)",
+    "lastName": "Last name (cleaned)",
+    "email": "email@domain.com",
+    "phone": "Full phone with country code",
+    "location": "Full address or City, Country",
+    "linkedin": "LinkedIn URL or username",
+    "website": "Portfolio/personal website URL"
   },
-  "summary": "Brief professional summary (2-3 sentences)",
-  "skills": ["skill1", "skill2", ...],
+  "currentTitle": "Most recent job title",
+  "currentCompany": "Most recent company",
+  "yearsOfExperience": 2,
+  "summary": "Professional summary or objective",
+  "skills": [
+    "Skill1",
+    "Skill2",
+    "Skill3"
+  ],
   "experience": [
     {
       "company": "Company Name",
       "title": "Job Title",
-      "duration": "Start - End (e.g., Jan 2020 - Present)",
-      "description": "Brief description of responsibilities"
+      "duration": "Month Year - Month Year",
+      "description": "Key responsibilities and achievements"
     }
   ],
   "education": [
     {
-      "institution": "University/School Name",
-      "degree": "Degree Name",
+      "institution": "University Name",
+      "degree": "Degree Name (e.g., Master of Science, Bachelor)",
       "field": "Field of Study",
-      "year": "Graduation Year"
+      "year": "Year or date range"
     }
   ],
-  "certifications": ["certification1", "certification2", ...],
-  "languages": ["language1", "language2", ...]
+  "certifications": ["Certification1", "Workshop1"],
+  "languages": ["Language1", "Language2"]
 }
 
-Return ONLY valid JSON, no additional text.
+IMPORTANT:
+- Extract EVERY skill (don't miss technical skills, software, tools)
+- Extract EVERY work experience (including research assistant, internships)
+- Extract EVERY education degree
+- Return ONLY valid JSON, no markdown code blocks, no extra text
 `.trim();
 
       const response = await openai.chat.completions.create({
@@ -144,15 +215,15 @@ Return ONLY valid JSON, no additional text.
         messages: [
           {
             role: 'system',
-            content: 'You are an expert resume parser that extracts structured data from resumes. Always return valid JSON only.',
+            content: 'You are an expert resume parser with 10+ years experience analyzing resumes in all formats. Extract EVERY piece of information, handle unusual formatting, parse all date formats, and be thorough. Always return valid JSON only, no markdown code blocks.',
           },
           {
             role: 'user',
             content: prompt,
           },
         ],
-        temperature: 0.3,
-        max_tokens: 2000,
+        temperature: 0.1,
+        max_tokens: 3000,
       });
 
       const content = response.choices[0]?.message?.content;
@@ -160,11 +231,32 @@ Return ONLY valid JSON, no additional text.
         throw new Error('No response from OpenAI');
       }
 
-      // Parse JSON response
-      const parsed = JSON.parse(content);
+      // Clean the response - remove markdown code blocks if present
+      let cleanedContent = content.trim();
 
+      // Remove markdown JSON code blocks like ```json ... ```
+      if (cleanedContent.startsWith('```')) {
+        cleanedContent = cleanedContent
+          .replace(/^```json\s*/i, '')
+          .replace(/^```\s*/, '')
+          .replace(/\s*```$/, '');
+      }
+
+      // Parse JSON response
+      const parsed = JSON.parse(cleanedContent);
+
+      // Ensure all required fields exist and add derived fields
       return {
-        ...parsed,
+        personalInfo: parsed.personalInfo || {},
+        currentTitle: parsed.currentTitle || parsed.experience?.[0]?.title || '',
+        currentCompany: parsed.currentCompany || parsed.experience?.[0]?.company || '',
+        yearsOfExperience: parsed.yearsOfExperience || 0,
+        summary: parsed.summary || '',
+        skills: Array.isArray(parsed.skills) ? parsed.skills : [],
+        experience: Array.isArray(parsed.experience) ? parsed.experience : [],
+        education: Array.isArray(parsed.education) ? parsed.education : [],
+        certifications: Array.isArray(parsed.certifications) ? parsed.certifications : [],
+        languages: Array.isArray(parsed.languages) ? parsed.languages : [],
         extractedText: resumeText,
       };
     } catch (error: any) {

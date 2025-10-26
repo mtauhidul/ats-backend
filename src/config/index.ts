@@ -37,6 +37,13 @@ export const config = {
     scoringModel: process.env.OPENAI_SCORING_MODEL || 'gpt-4o',
   },
 
+  // Affinda Resume Parser
+  affinda: {
+    apiToken: process.env.AFFINDA_API_TOKEN || '',
+    workspace: process.env.AFFINDA_WORKSPACE || '',
+    useAffinda: process.env.USE_AFFINDA_PARSER === 'true',
+  },
+
   // Zoom
   zoom: {
     accountId: process.env.ZOOM_ACCOUNT_ID || '',
