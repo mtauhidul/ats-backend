@@ -1,11 +1,14 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IUser extends Document {
-  clerkId: string;
+  clerkId?: string; // Optional - for users created internally without Clerk auth
   email: string;
   firstName: string;
   lastName: string;
   avatar?: string;
+  phone?: string;
+  title?: string; // Job title/position
+  department?: string;
   role: 'super_admin' | 'admin' | 'recruiter' | 'hiring_manager' | 'interviewer';
   isActive: boolean;
   lastLogin?: Date;
@@ -17,8 +20,9 @@ const UserSchema = new Schema<IUser>(
   {
     clerkId: {
       type: String,
-      required: true,
+      required: false, // Optional - not all users come through Clerk
       unique: true,
+      sparse: true, // Only enforce uniqueness when clerkId is present
       index: true,
     },
     email: {
@@ -41,6 +45,18 @@ const UserSchema = new Schema<IUser>(
     },
     avatar: {
       type: String,
+    },
+    phone: {
+      type: String,
+      trim: true,
+    },
+    title: {
+      type: String,
+      trim: true,
+    },
+    department: {
+      type: String,
+      trim: true,
     },
     role: {
       type: String,
@@ -83,6 +99,9 @@ UserSchema.methods.toJSON = function () {
     lastName: user.lastName,
     fullName: `${user.firstName} ${user.lastName}`,
     avatar: user.avatar,
+    phone: user.phone,
+    title: user.title,
+    department: user.department,
     role: user.role,
     isActive: user.isActive,
     lastLogin: user.lastLogin,

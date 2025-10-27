@@ -2,7 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface ITeamMember extends Document {
   userId: mongoose.Types.ObjectId;
-  jobId: mongoose.Types.ObjectId;
+  jobId?: mongoose.Types.ObjectId; // Optional - team members can be created without job assignment
   role: 'recruiter' | 'hiring_manager' | 'interviewer' | 'coordinator';
   permissions: {
     canViewApplications: boolean;
@@ -28,7 +28,7 @@ const TeamMemberSchema = new Schema<ITeamMember>(
     jobId: {
       type: Schema.Types.ObjectId,
       ref: 'Job',
-      required: true,
+      required: false, // Optional - can assign to job later
       index: true,
     },
     role: {
@@ -76,7 +76,8 @@ const TeamMemberSchema = new Schema<ITeamMember>(
 );
 
 // Indexes
-TeamMemberSchema.index({ userId: 1, jobId: 1 }, { unique: true });
+// Unique constraint: same user can only be on a team once for the same job (if job is specified)
+TeamMemberSchema.index({ userId: 1, jobId: 1 }, { unique: true, sparse: true });
 TeamMemberSchema.index({ jobId: 1, isActive: 1 });
 TeamMemberSchema.index({ userId: 1, isActive: 1 });
 TeamMemberSchema.index({ role: 1, isActive: 1 });

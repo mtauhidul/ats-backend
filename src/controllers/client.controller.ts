@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { Client } from '../models';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
 import { NotFoundError, ValidationError as CustomValidationError } from '../utils/errors';
@@ -8,6 +9,64 @@ import {
   UpdateClientInput,
   ListClientsQuery,
 } from '../types/client.types';
+
+/**
+ * Calculate statistics for a client
+ */
+async function calculateClientStatistics(clientId: string) {
+  const Job = mongoose.model('Job');
+  const Application = mongoose.model('Application');
+
+  // Get all jobs for this client
+  const jobs = await Job.find({ clientId }).select('status');
+  
+  const totalJobs = jobs.length;
+  const activeJobs = jobs.filter((j: any) => j.status === 'open').length;
+  const closedJobs = jobs.filter((j: any) => j.status === 'closed').length;
+  const draftJobs = jobs.filter((j: any) => j.status === 'draft').length;
+
+  // Get all applications for this client's jobs
+  const jobIds = jobs.map((j: any) => j._id);
+  const applications = await Application.find({ jobId: { $in: jobIds } }).select('status createdAt');
+
+  const totalCandidates = applications.length;
+  const activeCandidates = applications.filter((a: any) => 
+    ['applied', 'screening', 'interview', 'offer'].includes(a.status)
+  ).length;
+  const hiredCandidates = applications.filter((a: any) => a.status === 'hired').length;
+  const rejectedCandidates = applications.filter((a: any) => 
+    ['rejected', 'withdrawn'].includes(a.status)
+  ).length;
+
+  // Calculate success rate
+  const successRate = totalCandidates > 0 
+    ? Math.round((hiredCandidates / totalCandidates) * 100) 
+    : 0;
+
+  // Calculate average time to hire (simplified - days from application to hired)
+  const hiredApps = applications.filter((a: any) => a.status === 'hired');
+  let averageTimeToHire = 0;
+  if (hiredApps.length > 0) {
+    const totalDays = hiredApps.reduce((sum: number, app: any) => {
+      const days = Math.floor((Date.now() - new Date(app.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+      return sum + days;
+    }, 0);
+    averageTimeToHire = Math.round(totalDays / hiredApps.length);
+  }
+
+  return {
+    totalJobs,
+    activeJobs,
+    closedJobs,
+    draftJobs,
+    totalCandidates,
+    activeCandidates,
+    hiredCandidates,
+    rejectedCandidates,
+    successRate,
+    averageTimeToHire,
+  };
+}
 
 /**
  * Create new client
@@ -89,10 +148,22 @@ export const getClients = asyncHandler(
       .skip(skip)
       .limit(limit);
 
+    // Calculate statistics for each client
+    const clientsWithStats = await Promise.all(
+      clients.map(async (client) => {
+        const clientObj = client.toJSON() as any;
+        const stats = await calculateClientStatistics(clientObj.id || clientObj._id);
+        return {
+          ...clientObj,
+          statistics: stats,
+        };
+      })
+    );
+
     successResponse(
       res,
       {
-        clients,
+        clients: clientsWithStats,
         pagination,
       },
       'Clients retrieved successfully'
@@ -116,6 +187,9 @@ export const getClientById = asyncHandler(
 
     // Transform the client data to match frontend schema
     const clientData = client.toJSON();
+
+    // Calculate real-time statistics
+    const statistics = await calculateClientStatistics(id);
 
     // Populate assignedToName if assignedTo exists
     let assignedToId = clientData.assignedTo;
@@ -147,16 +221,7 @@ export const getClientById = asyncHandler(
       },
       description: clientData.description || '',
       contacts: clientData.contacts || [],
-      statistics: clientData.statistics || {
-        totalJobs: 0,
-        activeJobs: 0,
-        closedJobs: 0,
-        draftJobs: 0,
-        totalCandidates: 0,
-        activeCandidates: 0,
-        hiredCandidates: 0,
-        rejectedCandidates: 0,
-      },
+      statistics,
       jobIds: clientData.jobIds || [],
       tags: clientData.tags || [],
       assignedTo: assignedToId || '',

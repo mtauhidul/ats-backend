@@ -1,15 +1,22 @@
-import { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import { Job, Pipeline } from '../models';
-import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
-import { NotFoundError, ValidationError as CustomValidationError } from '../utils/errors';
-import logger from '../utils/logger';
+import { Request, Response } from "express";
+import mongoose from "mongoose";
+import { Job, Pipeline } from "../models";
 import {
-  CreateJobInput,
-  UpdateJobInput,
-  ListJobsQuery,
   BulkUpdateJobStatusInput,
-} from '../types/job.types';
+  CreateJobInput,
+  ListJobsQuery,
+  UpdateJobInput,
+} from "../types/job.types";
+import {
+  ValidationError as CustomValidationError,
+  NotFoundError,
+} from "../utils/errors";
+import {
+  asyncHandler,
+  paginateResults,
+  successResponse,
+} from "../utils/helpers";
+import logger from "../utils/logger";
 
 /**
  * Create new job posting
@@ -22,7 +29,7 @@ export const createJob = asyncHandler(
     if (data.pipelineId) {
       const pipeline = await Pipeline.findById(data.pipelineId);
       if (!pipeline) {
-        throw new NotFoundError('Pipeline not found');
+        throw new NotFoundError("Pipeline not found");
       }
     }
 
@@ -34,15 +41,15 @@ export const createJob = asyncHandler(
 
     // Populate references
     await job.populate([
-      { path: 'clientId', select: 'companyName logo' },
-      { path: 'pipelineId', select: 'name stages' },
-      { path: 'categoryIds', select: 'name' },
-      { path: 'tagIds', select: 'name color' },
+      { path: "clientId", select: "companyName logo" },
+      { path: "pipelineId", select: "name stages" },
+      { path: "categoryIds", select: "name" },
+      { path: "tagIds", select: "name color" },
     ]);
 
     logger.info(`Job created: ${job.title} by user ${req.user?._id}`);
 
-    successResponse(res, job, 'Job created successfully', 201);
+    successResponse(res, job, "Job created successfully", 201);
   }
 );
 
@@ -60,8 +67,8 @@ export const getJobs = asyncHandler(
       experienceLevel,
       isRemote,
       search,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
+      sortBy = "createdAt",
+      sortOrder = "desc",
     } = req.query as any as ListJobsQuery;
 
     // Build filter
@@ -74,9 +81,9 @@ export const getJobs = asyncHandler(
 
     if (search) {
       filter.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-        { location: { $regex: search, $options: 'i' } },
+        { title: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+        { location: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -96,14 +103,14 @@ export const getJobs = asyncHandler(
 
     // Build sort object
     const sort: any = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
 
     // Fetch data
     const jobs = await Job.find(filter)
-      .populate('clientId', 'companyName logo')
-      .populate('pipelineId', 'name stages')
-      .populate('categoryIds', 'name')
-      .populate('tagIds', 'name color')
+      .populate("clientId", "companyName logo")
+      .populate("pipelineId", "name stages")
+      .populate("categoryIds", "name")
+      .populate("tagIds", "name color")
       .sort(sort)
       .skip(skip)
       .limit(limit);
@@ -114,7 +121,7 @@ export const getJobs = asyncHandler(
         jobs,
         pagination,
       },
-      'Jobs retrieved successfully'
+      "Jobs retrieved successfully"
     );
   }
 );
@@ -127,18 +134,18 @@ export const getJobById = asyncHandler(
     const { id } = req.params;
 
     const job = await Job.findById(id)
-      .populate('clientId', 'companyName logo website industry')
-      .populate('pipelineId', 'name stages')
-      .populate('categoryIds', 'name')
-      .populate('tagIds', 'name color')
-      .populate('createdBy', 'firstName lastName email');
+      .populate("clientId", "companyName logo website industry")
+      .populate("pipelineId", "name stages")
+      .populate("categoryIds", "name")
+      .populate("tagIds", "name color")
+      .populate("createdBy", "firstName lastName email");
 
     if (!job) {
-      throw new NotFoundError('Job not found');
+      throw new NotFoundError("Job not found");
     }
 
     // Get application count
-    const Application = mongoose.model('Application');
+    const Application = mongoose.model("Application");
     const applicationCount = await Application.countDocuments({ jobId: id });
 
     successResponse(
@@ -147,7 +154,7 @@ export const getJobById = asyncHandler(
         ...job.toJSON(),
         applicationCount,
       },
-      'Job retrieved successfully'
+      "Job retrieved successfully"
     );
   }
 );
@@ -160,36 +167,44 @@ export const updateJob = asyncHandler(
     const { id } = req.params;
     const updates: UpdateJobInput = req.body;
 
-    const job = await Job.findById(id);
-
-    if (!job) {
-      throw new NotFoundError('Job not found');
-    }
+    logger.info(`=== Updating Job ${id} ===`);
+    logger.info("Updates received:", JSON.stringify(updates, null, 2));
+    logger.info("Requirements field:", updates.requirements);
+    logger.info("Skills field:", updates.skills);
 
     // If pipelineId is being changed, verify it exists
     if (updates.pipelineId) {
       const pipeline = await Pipeline.findById(updates.pipelineId);
       if (!pipeline) {
-        throw new NotFoundError('Pipeline not found');
+        throw new NotFoundError("Pipeline not found");
       }
     }
 
-    // Update fields
-    Object.assign(job, updates);
-    job.updatedBy = req.user?._id as any;
-    await job.save();
-
-    // Populate references
-    await job.populate([
-      { path: 'clientId', select: 'name logo' },
-      { path: 'pipelineId', select: 'name stages' },
-      { path: 'categoryIds', select: 'name' },
-      { path: 'tagIds', select: 'name color' },
+    // Update job using findByIdAndUpdate with proper options
+    const job = await Job.findByIdAndUpdate(
+      id,
+      {
+        ...updates,
+        updatedBy: req.user?._id,
+      },
+      {
+        new: true, // Return updated document
+        runValidators: true, // Run schema validators
+      }
+    ).populate([
+      { path: "clientId", select: "name logo" },
+      { path: "pipelineId", select: "name stages" },
+      { path: "categoryIds", select: "name" },
+      { path: "tagIds", select: "name color" },
     ]);
+
+    if (!job) {
+      throw new NotFoundError("Job not found");
+    }
 
     logger.info(`Job updated: ${job.title}`);
 
-    successResponse(res, job, 'Job updated successfully');
+    successResponse(res, job, "Job updated successfully");
   }
 );
 
@@ -203,11 +218,11 @@ export const deleteJob = asyncHandler(
     const job = await Job.findById(id);
 
     if (!job) {
-      throw new NotFoundError('Job not found');
+      throw new NotFoundError("Job not found");
     }
 
     // Check if there are applications
-    const Application = mongoose.model('Application');
+    const Application = mongoose.model("Application");
     const applicationCount = await Application.countDocuments({ jobId: id });
 
     if (applicationCount > 0) {
@@ -220,7 +235,7 @@ export const deleteJob = asyncHandler(
 
     logger.info(`Job deleted: ${job.title}`);
 
-    successResponse(res, null, 'Job deleted successfully');
+    successResponse(res, null, "Job deleted successfully");
   }
 );
 
@@ -232,9 +247,9 @@ export const bulkUpdateJobStatus = asyncHandler(
     const { jobIds, status }: BulkUpdateJobStatusInput = req.body;
 
     // Validate all IDs
-    const validIds = jobIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+    const validIds = jobIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
     if (validIds.length !== jobIds.length) {
-      throw new CustomValidationError('Some job IDs are invalid');
+      throw new CustomValidationError("Some job IDs are invalid");
     }
 
     // Update jobs
@@ -243,7 +258,9 @@ export const bulkUpdateJobStatus = asyncHandler(
       { status, updatedBy: req.user?._id }
     );
 
-    logger.info(`Bulk updated ${result.modifiedCount} jobs to status: ${status}`);
+    logger.info(
+      `Bulk updated ${result.modifiedCount} jobs to status: ${status}`
+    );
 
     successResponse(
       res,
@@ -273,7 +290,7 @@ export const getJobStats = asyncHandler(
           byStatus: [
             {
               $group: {
-                _id: '$status',
+                _id: "$status",
                 count: { $sum: 1 },
               },
             },
@@ -281,14 +298,14 @@ export const getJobStats = asyncHandler(
           byEmploymentType: [
             {
               $group: {
-                _id: '$employmentType',
+                _id: "$employmentType",
                 count: { $sum: 1 },
               },
             },
           ],
           total: [
             {
-              $count: 'count',
+              $count: "count",
             },
           ],
         },
@@ -301,12 +318,15 @@ export const getJobStats = asyncHandler(
         acc[item._id] = item.count;
         return acc;
       }, {}),
-      byEmploymentType: stats[0].byEmploymentType.reduce((acc: any, item: any) => {
-        acc[item._id] = item.count;
-        return acc;
-      }, {}),
+      byEmploymentType: stats[0].byEmploymentType.reduce(
+        (acc: any, item: any) => {
+          acc[item._id] = item.count;
+          return acc;
+        },
+        {}
+      ),
     };
 
-    successResponse(res, result, 'Job statistics retrieved successfully');
+    successResponse(res, result, "Job statistics retrieved successfully");
   }
 );
