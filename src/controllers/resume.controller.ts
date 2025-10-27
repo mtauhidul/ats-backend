@@ -72,6 +72,7 @@ export const parseResume = asyncHandler(
     response.summary = parsedData.summary;
     response.languages = parsedData.languages;
     response.certifications = parsedData.certifications;
+    response.extractedText = parsedData.extractedText; // Full raw text for validation
 
     logger.info(`Resume parsed successfully: ${parsedData.personalInfo?.email || 'unknown'}`);
 

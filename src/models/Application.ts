@@ -1,8 +1,8 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IApplication extends Document {
-  jobId: mongoose.Types.ObjectId;
-  clientId: mongoose.Types.ObjectId;
+  jobId?: mongoose.Types.ObjectId; // Optional - may be provided from email
+  clientId?: mongoose.Types.ObjectId; // Optional - fetched from job when approved
   
   // Candidate Info
   firstName: string;
@@ -13,6 +13,8 @@ export interface IApplication extends Document {
   // Resume & Documents
   resumeUrl: string;
   resumeOriginalName: string;
+  resumeRawText?: string; // Full raw text from resume
+  videoIntroUrl?: string; // Optional video introduction
   coverLetter?: string;
   additionalDocuments?: Array<{
     url: string;
@@ -39,6 +41,11 @@ export interface IApplication extends Document {
     certifications?: string[];
     languages?: string[];
   };
+  
+  // AI Resume Validation
+  isValidResume?: boolean; // AI's determination if this is a legitimate resume
+  validationScore?: number; // 0-100 score of resume legitimacy
+  validationReason?: string; // Explanation of why resume is valid/invalid
   
   // Application Details
   status: 'pending' | 'reviewing' | 'shortlisted' | 'rejected' | 'approved';
@@ -75,13 +82,13 @@ const ApplicationSchema = new Schema<IApplication>(
     jobId: {
       type: Schema.Types.ObjectId,
       ref: 'Job',
-      required: true,
+      required: false, // Optional - only required when approving to candidate
       index: true,
     },
     clientId: {
       type: Schema.Types.ObjectId,
       ref: 'Client',
-      required: true,
+      required: false, // Optional - auto-fetched from job when approving
       index: true,
     },
     
@@ -117,6 +124,14 @@ const ApplicationSchema = new Schema<IApplication>(
       type: String,
       required: true,
     },
+    resumeRawText: {
+      type: String,
+      required: false, // Full raw text from resume parsing
+    },
+    videoIntroUrl: {
+      type: String,
+      required: false, // Optional video introduction
+    },
     coverLetter: {
       type: String,
     },
@@ -144,6 +159,20 @@ const ApplicationSchema = new Schema<IApplication>(
       }],
       certifications: [String],
       languages: [String],
+    },
+    
+    // AI Resume Validation
+    isValidResume: {
+      type: Boolean,
+      default: null, // null = not validated yet, true = valid, false = invalid
+    },
+    validationScore: {
+      type: Number,
+      min: 0,
+      max: 100,
+    },
+    validationReason: {
+      type: String,
     },
     
     // Application Details

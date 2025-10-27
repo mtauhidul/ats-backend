@@ -19,6 +19,8 @@ export const createApplicationSchema = z.object({
     phone: z.string().optional(),
     resumeUrl: z.string().url('Invalid resume URL').optional(),
     resumeOriginalName: z.string().min(1, 'Resume filename is required').optional(),
+    resumeRawText: z.string().optional(),
+    videoIntroUrl: z.string().url('Invalid video URL').optional(),
     coverLetter: z.string().optional(),
     status: z.enum(['pending', 'reviewing', 'shortlisted', 'rejected', 'approved']).default('pending'),
     notes: z.string().optional(),
@@ -31,6 +33,9 @@ export const createApplicationSchema = z.object({
       languages: z.array(z.string()).optional(),
       certifications: z.array(z.string()).optional(),
     }).optional(),
+    isValidResume: z.boolean().nullable().optional(),
+    validationScore: z.number().min(0).max(100).nullable().optional(),
+    validationReason: z.string().optional(),
     aiAnalysis: z.object({
       isValid: z.boolean().optional(),
       matchScore: z.number().optional(),

@@ -52,6 +52,13 @@ export interface AIScore {
   recommendation: 'strong_fit' | 'good_fit' | 'moderate_fit' | 'poor_fit';
 }
 
+export interface ResumeValidation {
+  isValid: boolean;
+  score: number; // 0-100
+  reason: string;
+  issues?: string[];
+}
+
 class OpenAIService {
   /**
    * Extract text from PDF buffer
@@ -349,6 +356,131 @@ Return ONLY valid JSON, no additional text.
     } catch (error: any) {
       logger.error('Candidate scoring error:', error);
       throw new InternalServerError(`Failed to score candidate: ${error.message}`);
+    }
+  }
+
+  /**
+   * Validate if uploaded file is a legitimate resume
+   * Detects scam resumes, invalid files, empty content, etc.
+   */
+  async validateResume(resumeText: string): Promise<ResumeValidation> {
+    try {
+      // Basic validation - check if text is too short
+      if (!resumeText || resumeText.trim().length < 50) {
+        return {
+          isValid: false,
+          score: 0,
+          reason: 'Resume appears to be empty or contains insufficient content',
+          issues: ['Empty or very short content (less than 50 characters)'],
+        };
+      }
+
+      const prompt = `
+You are an expert ATS resume validator. Your job is to determine if the provided text is a LEGITIMATE PROFESSIONAL RESUME or an INVALID/SCAM submission.
+
+RESUME TEXT TO VALIDATE:
+${resumeText}
+
+VALIDATION CRITERIA:
+
+1. LEGITIMATE RESUME INDICATORS (look for most of these):
+   ✓ Contains personal information (name, email, phone, or location)
+   ✓ Has work experience section with company names and job titles
+   ✓ Lists skills, technical abilities, or competencies
+   ✓ Includes education history (degrees, universities, schools)
+   ✓ Professional formatting and structure
+   ✓ Coherent sentences and professional language
+   ✓ Dates and timelines for experience/education
+   ✓ Actual content describing work or achievements
+
+2. INVALID/SCAM RESUME INDICATORS (red flags):
+   ✗ Completely empty or just a few random words
+   ✗ Garbled text, nonsense characters, or corrupted content
+   ✗ Just a URL, phone number, or social media link with no context
+   ✗ Spam content, advertisements, or promotional material
+   ✗ Wrong file type content (images, code, random data)
+   ✗ Single sentence or paragraph with no professional information
+   ✗ No identifiable sections (experience, education, skills)
+   ✗ Obvious placeholder text like "Lorem ipsum" or "test test test"
+   ✗ Inappropriate content or completely unrelated to a resume
+
+SCORING GUIDELINES:
+- 80-100: Excellent professional resume with all key sections
+- 60-79: Good resume, may be missing minor details but clearly legitimate
+- 40-59: Questionable - very sparse or poorly formatted but has some resume elements
+- 20-39: Likely invalid - missing most resume components
+- 0-19: Definitely invalid/scam - no legitimate resume content
+
+RETURN THIS EXACT JSON STRUCTURE:
+{
+  "isValid": true or false,
+  "score": 0-100,
+  "reason": "Brief explanation of why this is valid or invalid",
+  "issues": ["List specific problems found"] or null if valid
+}
+
+EXAMPLES:
+
+VALID RESUME EXAMPLE:
+{
+  "isValid": true,
+  "score": 85,
+  "reason": "Complete professional resume with clear experience, education, and skills sections",
+  "issues": null
+}
+
+INVALID RESUME EXAMPLE:
+{
+  "isValid": false,
+  "score": 15,
+  "reason": "File contains only random characters and no professional resume content",
+  "issues": ["No personal information", "No work experience", "Corrupted or garbled text", "No coherent sentences"]
+}
+
+Now validate the resume provided above and return ONLY the JSON response:`;
+
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert resume validator for an ATS system. Analyze resumes and detect invalid or scam submissions. Always return valid JSON.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No response from OpenAI');
+      }
+
+      // Extract JSON from response
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        logger.error('Failed to parse validation response:', content);
+        throw new Error('Invalid JSON response from OpenAI');
+      }
+
+      const validation: ResumeValidation = JSON.parse(jsonMatch[0]);
+      
+      logger.info(`Resume validation completed: ${validation.isValid ? 'VALID' : 'INVALID'} (score: ${validation.score})`);
+      
+      return validation;
+    } catch (error: any) {
+      logger.error('Resume validation error:', error);
+      // Return a safe default on error - assume valid to avoid false rejections
+      return {
+        isValid: true,
+        score: 50,
+        reason: 'Unable to validate resume automatically. Manual review required.',
+        issues: ['Validation service temporarily unavailable'],
+      };
     }
   }
 

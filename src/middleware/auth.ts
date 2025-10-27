@@ -38,10 +38,6 @@ export const authenticate = async (
 
     const token = authHeader.substring(7);
 
-    // Log token info for debugging
-    logger.debug(`Token received (first 20 chars): ${token.substring(0, 20)}...`);
-    logger.debug(`Token length: ${token.length}`);
-
     // Verify JWT token with Clerk (automatically fetches public key from JWKS)
     const payload = await clerkClient.verifyToken(token);
 

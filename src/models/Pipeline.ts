@@ -91,6 +91,28 @@ const PipelineSchema = new Schema<IPipeline>(
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: function (_doc, ret: any) {
+        // Convert _id to id for frontend compatibility
+        ret.id = ret._id.toString();
+        delete ret._id;
+        delete ret.__v;
+        
+        // Transform stage _ids to id
+        if (ret.stages && Array.isArray(ret.stages)) {
+          ret.stages = ret.stages.map((stage: any) => {
+            if (stage._id) {
+              stage.id = stage._id.toString();
+              delete stage._id;
+            }
+            return stage;
+          });
+        }
+        
+        return ret;
+      },
+    },
   }
 );
 

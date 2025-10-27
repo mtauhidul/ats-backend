@@ -33,7 +33,22 @@ const transformApplication = (app: any) => {
 
 /**
  * Create new application
- * Supports all three submission methods
+ * 
+ * WORKFLOW:
+ * 1. Application Stage (this endpoint):
+ *    - Requires: firstName, lastName, email, resumeUrl, resumeOriginalName
+ *    - Optional: jobId (if mentioned in email), phone, parsedData, resumeRawText, videoIntroUrl
+ *    - Status: 'pending' (awaiting review)
+ *    - NOT required: clientId (will be auto-fetched from job during approval)
+ * 
+ * 2. Approval Stage (approveApplication endpoint):
+ *    - Recruiter reviews application
+ *    - Assigns jobId (if not already provided)
+ *    - System automatically fetches clientId from the job
+ *    - Creates Candidate with job application record
+ *    - Status changes to 'approved'
+ * 
+ * Supports all three submission methods: manual, direct_apply, email_automation
  */
 export const createApplication = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
@@ -41,7 +56,7 @@ export const createApplication = asyncHandler(
 
     let job = null;
 
-    // Verify job exists if jobId is provided
+    // Verify job exists if jobId is provided (optional at application stage)
     if (data.jobId) {
       job = await Job.findById(data.jobId);
       if (!job) {
@@ -71,6 +86,34 @@ export const createApplication = asyncHandler(
       throw new CustomValidationError(
         'sourceEmailAccountId is required for email_automation source'
       );
+    }
+
+    // AI Resume Validation (if resume text is provided)
+    let validationResult = null;
+    if (data.resumeRawText && data.resumeRawText.trim().length > 0) {
+      try {
+        logger.info('Running AI validation on resume...');
+        validationResult = await openaiService.validateResume(data.resumeRawText);
+        
+        // Add validation results to data
+        data.isValidResume = validationResult.isValid;
+        data.validationScore = validationResult.score;
+        data.validationReason = validationResult.reason;
+        
+        logger.info(
+          `Resume validation: ${validationResult.isValid ? 'VALID' : 'INVALID'} ` +
+          `(score: ${validationResult.score}/100) - ${validationResult.reason}`
+        );
+      } catch (error: any) {
+        logger.error('Resume validation failed:', error);
+        // Don't block application creation if validation fails
+        // Set to null to indicate validation couldn't be performed
+        data.isValidResume = null;
+        data.validationScore = null;
+        data.validationReason = 'Validation service unavailable';
+      }
+    } else {
+      logger.warn('No resume text provided for validation');
     }
 
     // Create application

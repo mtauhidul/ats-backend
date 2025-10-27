@@ -48,13 +48,31 @@ class App {
       }));
     }
 
-    // Rate limiting
+    // Rate limiting with more lenient settings
     const limiter = rateLimit({
       windowMs: config.rateLimit.windowMs,
       max: config.rateLimit.max,
       message: 'Too many requests from this IP, please try again later.',
       standardHeaders: true,
       legacyHeaders: false,
+      // Skip rate limiting for certain conditions
+      skip: (req: Request) => {
+        // Skip rate limiting in development for localhost
+        if (config.env === 'development' && 
+            (req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1')) {
+          return true;
+        }
+        return false;
+      },
+      // Handler for when rate limit is exceeded
+      handler: (req: Request, res: Response) => {
+        logger.warn(`Rate limit exceeded for IP: ${req.ip}`);
+        res.status(429).json({
+          success: false,
+          error: 'Too many requests, please try again later.',
+          retryAfter: Math.ceil(config.rateLimit.windowMs / 1000),
+        });
+      },
     });
     this.app.use('/api/', limiter);
   }
