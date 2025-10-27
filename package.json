@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
+    "test:integration": "ts-node tests/integration-test.ts",
     "lint": "eslint src/**/*.ts",
     "seed": "ts-node scripts/seed.ts",
     "migrate": "ts-node scripts/migrate.ts"

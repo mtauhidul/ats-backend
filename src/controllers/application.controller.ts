@@ -144,7 +144,7 @@ export const getApplications = asyncHandler(
     // Fetch data
     const applications = await Application.find(filter)
       .populate('jobId', 'title location employmentType')
-      .populate('clientId', 'name logo')
+      .populate('clientId', 'companyName logo')
       .populate('sourceEmailAccountId', 'name email')
       .sort(sort)
       .skip(skip)
@@ -170,7 +170,7 @@ export const getApplicationById = asyncHandler(
 
     const application = await Application.findById(id)
       .populate('jobId', 'title description location employmentType salaryRange')
-      .populate('clientId', 'name logo website industry')
+      .populate('clientId', 'companyName logo website industry')
       .populate('sourceEmailAccountId', 'name email')
       .populate('candidateId', 'firstName lastName email status currentStage aiScore');
 

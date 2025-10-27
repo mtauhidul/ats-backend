@@ -62,7 +62,7 @@ export const getEmails = asyncHandler(
       .populate('candidateId', 'firstName lastName email')
       .populate('applicationId', 'firstName lastName')
       .populate('jobId', 'title')
-      .populate('clientId', 'name')
+      .populate('clientId', 'companyName')
       .populate('interviewId', 'title scheduledAt')
       .populate('sentBy', 'firstName lastName email')
       .sort(sort)
@@ -91,7 +91,7 @@ export const getEmailById = asyncHandler(
       .populate('candidateId', 'firstName lastName email phone')
       .populate('applicationId', 'firstName lastName resumeUrl')
       .populate('jobId', 'title description')
-      .populate('clientId', 'name')
+      .populate('clientId', 'companyName')
       .populate('interviewId', 'title scheduledAt type')
       .populate('sentBy', 'firstName lastName email avatar');
 

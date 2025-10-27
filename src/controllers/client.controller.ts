@@ -108,22 +108,66 @@ export const getClientById = asyncHandler(
     const { id } = req.params;
 
     const client = await Client.findById(id)
-      .populate('createdBy', 'firstName lastName email');
+      .populate('assignedTo', 'firstName lastName email');
 
     if (!client) {
       throw new NotFoundError('Client not found');
     }
 
-    // Get job count
-    const Job = require('../models').Job;
-    const jobCount = await Job.countDocuments({ clientId: id });
+    // Transform the client data to match frontend schema
+    const clientData = client.toJSON();
+
+    // Populate assignedToName if assignedTo exists
+    let assignedToId = clientData.assignedTo;
+    let assignedToName = clientData.assignedToName || '';
+
+    if (clientData.assignedTo && typeof clientData.assignedTo === 'object') {
+      const assignedToUser = clientData.assignedTo as any;
+      assignedToName = `${assignedToUser.firstName} ${assignedToUser.lastName}`.trim();
+      assignedToId = assignedToUser.id || assignedToUser._id?.toString();
+    }
+
+    // Build response matching frontend schema exactly
+    const response = {
+      id: clientData.id,
+      companyName: clientData.companyName,
+      email: clientData.email || '',
+      phone: clientData.phone || '',
+      website: clientData.website || '',
+      logo: clientData.logo || '',
+      industry: clientData.industry,
+      companySize: clientData.companySize || '',
+      status: clientData.status,
+      address: clientData.address || {
+        street: '',
+        city: '',
+        state: '',
+        country: '',
+        postalCode: '',
+      },
+      description: clientData.description || '',
+      contacts: clientData.contacts || [],
+      statistics: clientData.statistics || {
+        totalJobs: 0,
+        activeJobs: 0,
+        closedJobs: 0,
+        draftJobs: 0,
+        totalCandidates: 0,
+        activeCandidates: 0,
+        hiredCandidates: 0,
+        rejectedCandidates: 0,
+      },
+      jobIds: clientData.jobIds || [],
+      tags: clientData.tags || [],
+      assignedTo: assignedToId || '',
+      assignedToName: assignedToName,
+      createdAt: clientData.createdAt,
+      updatedAt: clientData.updatedAt,
+    };
 
     successResponse(
       res,
-      {
-        ...client.toJSON(),
-        jobCount,
-      },
+      response,
       'Client retrieved successfully'
     );
   }

@@ -8,15 +8,32 @@ import { z } from 'zod';
 export const createClientSchema = z.object({
   body: z.object({
     companyName: z.string().min(1, 'Company name is required'),
-    industry: z.string().optional(),
-    website: z.string().url('Invalid URL').optional(),
-    logo: z.string().url('Invalid URL').optional(),
-    contactPerson: z.string().optional(),
-    contactEmail: z.string().email('Invalid email address').optional(),
-    contactPhone: z.string().optional(),
-    address: z.string().optional(),
-    notes: z.string().optional(),
-    isActive: z.boolean().default(true),
+    email: z.string().email('Invalid email address'),
+    phone: z.string().min(1, 'Phone is required'),
+    website: z.string().url('Invalid URL').optional().or(z.literal('')),
+    logo: z.string().optional().refine(
+      (val) => !val || val === '' || val.startsWith('http://') || val.startsWith('https://') || val.startsWith('data:'),
+      { message: 'Logo must be a valid URL or data URL' }
+    ),
+    industry: z.enum(['technology', 'healthcare', 'finance', 'education', 'retail', 'manufacturing', 'consulting', 'real_estate', 'hospitality', 'other']),
+    companySize: z.enum(['1-50', '51-200', '201-500', '500+']),
+    status: z.enum(['active', 'inactive', 'pending', 'on_hold']).default('active'),
+    description: z.string().optional(),
+    address: z.object({
+      street: z.string().optional(),
+      city: z.string().min(1, 'City is required'),
+      state: z.string().optional(),
+      country: z.string().min(1, 'Country is required'),
+      postalCode: z.string().optional(),
+    }),
+    contacts: z.array(z.object({
+      name: z.string().min(1, 'Contact name is required'),
+      email: z.string().email('Invalid email address'),
+      phone: z.string().optional(),
+      position: z.string().min(1, 'Position is required'),
+      isPrimary: z.boolean(),
+    })),
+    tags: z.array(z.string()).optional(),
   }),
 });
 
@@ -27,15 +44,26 @@ export const updateClientSchema = z.object({
   }),
   body: z.object({
     companyName: z.string().min(1).optional(),
-    industry: z.string().optional(),
-    website: z.string().url().optional(),
-    logo: z.string().url().optional(),
-    contactPerson: z.string().optional(),
-    contactEmail: z.string().email().optional(),
-    contactPhone: z.string().optional(),
-    address: z.string().optional(),
-    notes: z.string().optional(),
-    isActive: z.boolean().optional(),
+    email: z.string().email('Invalid email address').optional(),
+    phone: z.string().optional(),
+    website: z.string().url('Invalid URL').optional().or(z.literal('')),
+    logo: z.string().optional().refine(
+      (val) => !val || val === '' || val.startsWith('http://') || val.startsWith('https://') || val.startsWith('data:'),
+      { message: 'Logo must be a valid URL or data URL' }
+    ),
+    industry: z.enum(['technology', 'healthcare', 'finance', 'education', 'retail', 'manufacturing', 'consulting', 'real_estate', 'hospitality', 'other']).optional(),
+    companySize: z.enum(['1-50', '51-200', '201-500', '500+']).optional(),
+    status: z.enum(['active', 'inactive', 'pending', 'on_hold']).optional(),
+    description: z.string().optional(),
+    address: z.object({
+      street: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      country: z.string().optional(),
+      postalCode: z.string().optional(),
+    }).optional(),
+    tags: z.array(z.string()).optional(),
+    assignedTo: z.string().optional(),
   }),
 });
 

@@ -153,6 +153,52 @@ const JobSchema = new Schema<IJob>(
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: function (_doc, ret: any) {
+        // Convert _id to id for frontend compatibility
+        ret.id = ret._id.toString();
+        delete ret._id;
+        delete ret.__v;
+
+        // Map backend field names to frontend expectations
+        ret.type = ret.jobType;
+        ret.workMode = ret.locationType;
+
+        // Transform requirements from simple array to nested object structure
+        // Backend: requirements: ["skill1", "skill2"]
+        // Frontend: requirements: { experience: "", skills: { required: [...], preferred: [] } }
+        if (Array.isArray(ret.requirements)) {
+          ret.requirements = {
+            experience: ret.experienceLevel || '',
+            skills: {
+              required: ret.requirements || [],
+              preferred: [],
+            },
+          };
+        }
+
+        // Transform skills array to be included in requirements.skills if not already done
+        if (Array.isArray(ret.skills) && ret.skills.length > 0) {
+          if (!ret.requirements.skills.required || ret.requirements.skills.required.length === 0) {
+            ret.requirements.skills.required = ret.skills;
+          }
+        }
+
+        // Transform benefits from array to object
+        // Backend: benefits: ["healthInsurance", "dental"]
+        // Frontend: benefits: { healthInsurance: true, dental: true }
+        if (Array.isArray(ret.benefits)) {
+          const benefitsObj: any = {};
+          ret.benefits.forEach((benefit: string) => {
+            benefitsObj[benefit] = true;
+          });
+          ret.benefits = benefitsObj;
+        }
+
+        return ret;
+      },
+    },
   }
 );
 

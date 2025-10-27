@@ -21,12 +21,11 @@ export const asyncHandler = (fn: AsyncFunction) => {
 export const successResponse = (
   res: Response,
   data: any,
-  message: string = 'Success',
+  _message?: string,
   statusCode: number = 200
 ) => {
   return res.status(statusCode).json({
-    status: 'success',
-    message,
+    success: true,
     data,
   });
 };
@@ -53,15 +52,11 @@ export function getPaginationParams(query: any): PaginationParams {
 export function paginateResults(totalCount: number, params: PaginationParams) {
   const { page, limit } = params;
   const totalPages = Math.ceil(totalCount / limit);
-  const hasNextPage = page < totalPages;
-  const hasPrevPage = page > 1;
 
   return {
-    totalCount,
+    page,
+    limit,
+    total: totalCount,
     totalPages,
-    currentPage: page,
-    pageSize: limit,
-    hasNextPage,
-    hasPrevPage,
   };
 }

@@ -34,7 +34,7 @@ export const createJob = asyncHandler(
 
     // Populate references
     await job.populate([
-      { path: 'clientId', select: 'name logo' },
+      { path: 'clientId', select: 'companyName logo' },
       { path: 'pipelineId', select: 'name stages' },
       { path: 'categoryIds', select: 'name' },
       { path: 'tagIds', select: 'name color' },
@@ -100,7 +100,7 @@ export const getJobs = asyncHandler(
 
     // Fetch data
     const jobs = await Job.find(filter)
-      .populate('clientId', 'name logo')
+      .populate('clientId', 'companyName logo')
       .populate('pipelineId', 'name stages')
       .populate('categoryIds', 'name')
       .populate('tagIds', 'name color')
@@ -127,7 +127,7 @@ export const getJobById = asyncHandler(
     const { id } = req.params;
 
     const job = await Job.findById(id)
-      .populate('clientId', 'name logo website industry')
+      .populate('clientId', 'companyName logo website industry')
       .populate('pipelineId', 'name stages')
       .populate('categoryIds', 'name')
       .populate('tagIds', 'name color')

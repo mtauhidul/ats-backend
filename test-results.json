@@ -1,0 +1,277 @@
+{
+  "timestamp": "2025-10-26T22:32:02.453Z",
+  "summary": {
+    "total": 14,
+    "passed": 1,
+    "failed": 0,
+    "errors": 13
+  },
+  "tests": [
+    {
+      "endpoint": "/clients",
+      "method": "GET",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.125Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    },
+    {
+      "endpoint": "/clients",
+      "method": "POST",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.157Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    },
+    {
+      "endpoint": "/candidates",
+      "method": "GET",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.162Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    },
+    {
+      "endpoint": "/jobs",
+      "method": "GET",
+      "status": "PASS",
+      "errors": [],
+      "timestamp": "2025-10-26T22:32:02.169Z",
+      "statusCode": 200,
+      "received": {
+        "success": true,
+        "data": {
+          "jobs": [],
+          "pagination": {
+            "page": 1,
+            "limit": 10,
+            "total": 0,
+            "totalPages": 0
+          }
+        }
+      },
+      "expected": {
+        "success": true,
+        "data": {
+          "jobs": [],
+          "pagination": {
+            "page": 0,
+            "limit": 0,
+            "total": 0,
+            "totalPages": 0
+          }
+        }
+      }
+    },
+    {
+      "endpoint": "/applications",
+      "method": "GET",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.400Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    },
+    {
+      "endpoint": "/tags",
+      "method": "GET",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.406Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    },
+    {
+      "endpoint": "/categories",
+      "method": "GET",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.416Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    },
+    {
+      "endpoint": "/pipelines",
+      "method": "GET",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.422Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    },
+    {
+      "endpoint": "/interviews",
+      "method": "GET",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.426Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    },
+    {
+      "endpoint": "/team",
+      "method": "GET",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.430Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    },
+    {
+      "endpoint": "/users",
+      "method": "GET",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.435Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    },
+    {
+      "endpoint": "/emails",
+      "method": "GET",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.439Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    },
+    {
+      "endpoint": "/messages",
+      "method": "GET",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.444Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    },
+    {
+      "endpoint": "/notifications",
+      "method": "GET",
+      "status": "ERROR",
+      "errors": [
+        "HTTP 401: Unauthorized",
+        "Response: {\"success\":false,\"error\":{\"message\":\"JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\",\"stack\":\"Error: JWT is expired. Expiry date: Sun, 26 Oct "
+      ],
+      "timestamp": "2025-10-26T22:32:02.449Z",
+      "statusCode": 401,
+      "received": {
+        "success": false,
+        "error": {
+          "message": "JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.",
+          "stack": "Error: JWT is expired. Expiry date: Sun, 26 Oct 2025 22:29:40 GMT, Current date: Sun, 26 Oct 2025 22:32:02 GMT.\n    at authenticate (/Users/mirtauhidulislam/Workspace/client-work/office/ats/ats-backend/src/middleware/auth.ts:88:10)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+        }
+      }
+    }
+  ]
+}
