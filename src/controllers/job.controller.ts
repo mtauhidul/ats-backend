@@ -63,9 +63,9 @@ export const getJobs = asyncHandler(
       limit = 10,
       clientId,
       status,
-      employmentType,
+      jobType,
       experienceLevel,
-      isRemote,
+      locationType,
       search,
       sortBy = "createdAt",
       sortOrder = "desc",
@@ -75,9 +75,9 @@ export const getJobs = asyncHandler(
     const filter: any = {};
     if (clientId) filter.clientId = clientId;
     if (status) filter.status = status;
-    if (employmentType) filter.employmentType = employmentType;
+    if (jobType) filter.jobType = jobType;
     if (experienceLevel) filter.experienceLevel = experienceLevel;
-    if (isRemote !== undefined) filter.isRemote = isRemote;
+    if (locationType) filter.locationType = locationType;
 
     if (search) {
       filter.$or = [
@@ -115,10 +115,42 @@ export const getJobs = asyncHandler(
       .skip(skip)
       .limit(limit);
 
+    // Calculate statistics for each job
+    const Candidate = mongoose.model("Candidate");
+    const jobsWithStats = await Promise.all(
+      jobs.map(async (job) => {
+        const jobObj = job.toObject();
+
+        // Count candidates for this job
+        const totalCandidates = await Candidate.countDocuments({
+          jobIds: job._id,
+        });
+
+        const activeCandidates = await Candidate.countDocuments({
+          jobIds: job._id,
+          status: { $in: ["active", "interviewing", "offered"] },
+        });
+
+        const hiredCandidates = await Candidate.countDocuments({
+          jobIds: job._id,
+          status: "hired",
+        });
+
+        return {
+          ...jobObj,
+          statistics: {
+            totalCandidates,
+            activeCandidates,
+            hiredCandidates,
+          },
+        };
+      })
+    );
+
     successResponse(
       res,
       {
-        jobs,
+        jobs: jobsWithStats,
         pagination,
       },
       "Jobs retrieved successfully"
@@ -144,15 +176,31 @@ export const getJobById = asyncHandler(
       throw new NotFoundError("Job not found");
     }
 
-    // Get application count
-    const Application = mongoose.model("Application");
-    const applicationCount = await Application.countDocuments({ jobId: id });
+    // Get candidate statistics
+    const Candidate = mongoose.model("Candidate");
+    const totalCandidates = await Candidate.countDocuments({
+      jobIds: id,
+    });
+
+    const activeCandidates = await Candidate.countDocuments({
+      jobIds: id,
+      status: { $in: ["active", "interviewing", "offered"] },
+    });
+
+    const hiredCandidates = await Candidate.countDocuments({
+      jobIds: id,
+      status: "hired",
+    });
 
     successResponse(
       res,
       {
         ...job.toJSON(),
-        applicationCount,
+        statistics: {
+          totalCandidates,
+          activeCandidates,
+          hiredCandidates,
+        },
       },
       "Job retrieved successfully"
     );

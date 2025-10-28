@@ -343,8 +343,18 @@ Return ONLY valid JSON, no additional text.
         throw new Error('No response from OpenAI');
       }
 
+      // Remove markdown code blocks if present (```json ... ```)
+      let jsonContent = content.trim();
+      if (jsonContent.startsWith('```')) {
+        // Remove opening ```json or ```
+        jsonContent = jsonContent.replace(/^```(?:json)?\s*\n/, '');
+        // Remove closing ```
+        jsonContent = jsonContent.replace(/\n```\s*$/, '');
+        jsonContent = jsonContent.trim();
+      }
+
       // Parse JSON response
-      const score: AIScore = JSON.parse(content);
+      const score: AIScore = JSON.parse(jsonContent);
 
       // Validate scores are in range
       score.overallScore = Math.max(0, Math.min(100, score.overallScore));

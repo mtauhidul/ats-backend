@@ -190,6 +190,7 @@ export const getApplications = asyncHandler(
       .populate('clientId', 'companyName logo')
       .populate('sourceEmailAccountId', 'name email')
       .populate('teamMembers', 'firstName lastName email')
+      .populate('reviewedBy', 'firstName lastName email')
       .sort(sort)
       .skip(skip)
       .limit(limit);
@@ -217,7 +218,8 @@ export const getApplicationById = asyncHandler(
       .populate('clientId', 'companyName logo website industry')
       .populate('sourceEmailAccountId', 'name email')
       .populate('candidateId', 'firstName lastName email status currentStage aiScore')
-      .populate('teamMembers', 'firstName lastName email');
+      .populate('teamMembers', 'firstName lastName email')
+      .populate('reviewedBy', 'firstName lastName email');
 
     if (!application) {
       throw new NotFoundError('Application not found');
@@ -258,12 +260,21 @@ export const updateApplication = asyncHandler(
 
     // Update fields
     Object.assign(application, updates);
+    
+    // If status is being changed to approved or rejected, set reviewedBy to current user
+    if (updates.status && ['approved', 'rejected'].includes(updates.status.toLowerCase())) {
+      if ((req as any).user && (req as any).user.id) {
+        application.reviewedBy = (req as any).user.id;
+      }
+    }
+    
     await application.save();
 
     // Populate references
     await application.populate([
       { path: 'jobId', select: 'title location employmentType' },
       { path: 'clientId', select: 'name logo' },
+      { path: 'reviewedBy', select: 'firstName lastName email' },
     ]);
 
     logger.info(`Application updated: ${application.email}`);
@@ -351,7 +362,7 @@ export const deleteApplication = asyncHandler(
 export const approveApplication = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
-    const { jobId, assignToPipeline, initialStage, notes }: ApproveApplicationInput = req.body;
+    const { jobId, assignToPipeline, notes }: ApproveApplicationInput = req.body;
 
     const application = await Application.findById(id);
 
@@ -375,22 +386,14 @@ export const approveApplication = asyncHandler(
 
     // Get pipeline (use provided or job's default)
     let pipeline: any = null;
-    let stage = initialStage || 'Applied';
 
     if (assignToPipeline) {
       pipeline = await Pipeline.findById(assignToPipeline);
       if (!pipeline) {
         throw new NotFoundError('Pipeline not found');
       }
-      // Use first stage if initialStage not provided
-      if (!initialStage && pipeline.stages && pipeline.stages.length > 0) {
-        stage = pipeline.stages[0].name;
-      }
     } else if (job.pipelineId) {
       pipeline = await Pipeline.findById(job.pipelineId);
-      if (pipeline && !initialStage && pipeline.stages && pipeline.stages.length > 0) {
-        stage = pipeline.stages[0].name;
-      }
     }
 
     // Perform AI scoring
@@ -413,35 +416,94 @@ export const approveApplication = asyncHandler(
       job.requirements || []
     );
 
-    // Create candidate
-    const candidate = await Candidate.create({
+    // Debug: Log parsedData before creating candidate
+    console.log('Creating candidate from application:', {
       applicationId: application._id,
-      jobId,
-      clientId: application.clientId,
+      hasParsedData: !!application.parsedData,
+      parsedDataKeys: application.parsedData ? Object.keys(application.parsedData) : [],
+      skillsCount: application.parsedData?.skills?.length || 0,
+      experienceCount: application.parsedData?.experience?.length || 0,
+      educationCount: application.parsedData?.education?.length || 0,
+      skillsSample: application.parsedData?.skills?.[0],
+      experienceSample: JSON.stringify(application.parsedData?.experience?.[0]),
+      educationSample: JSON.stringify(application.parsedData?.education?.[0]),
+    });
+
+    // Prepare candidate data
+    const candidateData: any = {
+      applicationId: application._id,
+      jobIds: [jobId],
       firstName: application.firstName,
       lastName: application.lastName,
       email: application.email,
       phone: application.phone,
       resumeUrl: application.resumeUrl,
-      pipelineId: pipeline?._id,
-      currentStage: stage,
+      resumeOriginalName: application.resumeOriginalName,
+      currentPipelineStageId: pipeline?._id,
       status: 'active',
       aiScore,
-      scoredForJobId: jobId,
       notes: notes || application.notes,
-      source: application.source,
+      source: 'application',
+      createdBy: (req as any).user.id,
+    };
+
+    // Copy parsed resume data from application if it exists
+    if (application.parsedData) {
+      if (application.parsedData.summary) {
+        candidateData.summary = application.parsedData.summary;
+      }
+      if (application.parsedData.skills && application.parsedData.skills.length > 0) {
+        candidateData.skills = [...application.parsedData.skills];
+      }
+      if (application.parsedData.experience && application.parsedData.experience.length > 0) {
+        candidateData.experience = application.parsedData.experience.map((exp: any) => ({
+          company: exp.company || '',
+          title: exp.title || '',
+          duration: exp.duration || '',
+          description: exp.description || '',
+        }));
+      }
+      if (application.parsedData.education && application.parsedData.education.length > 0) {
+        candidateData.education = application.parsedData.education.map((edu: any) => ({
+          institution: edu.institution || '',
+          degree: edu.degree || '',
+          field: edu.field || '',
+          year: edu.year || '',
+        }));
+      }
+      if (application.parsedData.certifications && application.parsedData.certifications.length > 0) {
+        candidateData.certifications = [...application.parsedData.certifications];
+      }
+      if (application.parsedData.languages && application.parsedData.languages.length > 0) {
+        candidateData.languages = [...application.parsedData.languages];
+      }
+    }
+
+    // Create candidate
+    const candidate = await Candidate.create(candidateData);
+    
+    console.log('Candidate created:', {
+      candidateId: candidate._id,
+      skillsCount: candidate.skills?.length || 0,
+      experienceCount: candidate.experience?.length || 0,
+      educationCount: candidate.education?.length || 0,
     });
 
     // Update application status
     application.status = 'approved';
     application.approvedAt = new Date();
+    
+    // Set reviewedBy to current user
+    if ((req as any).user && (req as any).user.id) {
+      application.reviewedBy = (req as any).user.id;
+    }
+    
     await application.save();
 
-    // Populate candidate data
+    // Populate candidate data (skip pipeline stage to avoid schema issues)
     await candidate.populate([
-      { path: 'jobId', select: 'title location employmentType' },
-      { path: 'clientId', select: 'name logo' },
-      { path: 'pipelineId', select: 'name stages' },
+      { path: 'jobIds', select: 'title location employmentType' },
+      { path: 'applicationId', select: 'firstName lastName email' },
     ]);
 
     logger.info(
@@ -477,6 +539,13 @@ export const bulkUpdateStatus = asyncHandler(
     const updateData: any = { status };
     if (notes) {
       updateData.$push = { notes };
+    }
+    
+    // If status is approved or rejected, set reviewedBy to current user
+    if (status && ['approved', 'rejected'].includes(status.toLowerCase())) {
+      if ((req as any).user && (req as any).user.id) {
+        updateData.reviewedBy = (req as any).user.id;
+      }
     }
 
     const result = await Application.updateMany(
