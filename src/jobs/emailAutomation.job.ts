@@ -25,6 +25,7 @@ import { config } from '../config';
 class EmailAutomationJob {
   private isRunning = false;
   private cronJob: cron.ScheduledTask | null = null;
+  private isEnabled = true; // Can be controlled from admin panel
 
   /**
    * Start the cron job
@@ -34,10 +35,23 @@ class EmailAutomationJob {
     const interval = config.email.checkInterval || '*/15 * * * *';
 
     this.cronJob = cron.schedule(interval, async () => {
-      await this.processEmails();
+      if (this.isEnabled) {
+        await this.processEmails();
+      } else {
+        logger.info('Email automation is disabled, skipping cycle');
+      }
     });
 
     logger.info(`📧 Email automation cron job started (interval: ${interval})`);
+    
+    // Run immediately on startup
+    setTimeout(() => {
+      if (this.isEnabled) {
+        this.processEmails().catch(err => {
+          logger.error('Initial email processing failed:', err);
+        });
+      }
+    }, 5000); // Wait 5 seconds after startup
   }
 
   /**
@@ -48,6 +62,32 @@ class EmailAutomationJob {
       this.cronJob.stop();
       logger.info('📧 Email automation cron job stopped');
     }
+  }
+
+  /**
+   * Enable email automation
+   */
+  enable(): void {
+    this.isEnabled = true;
+    logger.info('📧 Email automation enabled');
+  }
+
+  /**
+   * Disable email automation
+   */
+  disable(): void {
+    this.isEnabled = false;
+    logger.info('📧 Email automation disabled');
+  }
+
+  /**
+   * Get automation status
+   */
+  getStatus(): { enabled: boolean; running: boolean } {
+    return {
+      enabled: this.isEnabled,
+      running: this.isRunning,
+    };
   }
 
   /**
@@ -148,6 +188,11 @@ class EmailAutomationJob {
             continue;
           }
 
+          // Check for video attachments
+          const videoAttachments = email.attachments?.filter((att: any) =>
+            /\.(mp4|mov|avi|webm|mkv)$/i.test(att.filename)
+          );
+
           // Process first resume attachment
           const attachment = resumeAttachments[0];
           logger.info(`Processing resume: ${attachment.filename} from ${email.from}`);
@@ -158,11 +203,52 @@ class EmailAutomationJob {
             attachment.filename
           );
 
-          // Upload to Cloudinary
+          // AI Validation (only for email automation)
+          // Create a validation text from parsed data
+          const validationText = `
+Name: ${parsedResume.personalInfo?.firstName} ${parsedResume.personalInfo?.lastName}
+Email: ${parsedResume.personalInfo?.email}
+Phone: ${parsedResume.personalInfo?.phone}
+Summary: ${parsedResume.summary || 'N/A'}
+Skills: ${parsedResume.skills?.join(', ') || 'N/A'}
+Experience: ${parsedResume.experience?.map(exp => `${exp.title} at ${exp.company}`).join('; ') || 'N/A'}
+Education: ${parsedResume.education?.map(edu => `${edu.degree} from ${edu.institution}`).join('; ') || 'N/A'}
+          `.trim();
+
+          const validation = await openaiService.validateResume(validationText);
+
+          logger.info(
+            `Resume validation: ${validation.isValid ? '✅ Valid' : '⚠️ Needs Review'} ` +
+            `(Score: ${validation.score}/100) - ${validation.reason}`
+          );
+
+          // Note: We don't auto-reject invalid resumes anymore
+          // Instead, we store them with AI recommendation for admin review
+
+          // Upload resume to Cloudinary
           const uploadResult = await cloudinaryService.uploadResume(
             attachment.content,
             attachment.filename
           );
+
+          // Upload video if present
+          let videoIntroUrl: string | undefined = undefined;
+          if (videoAttachments && videoAttachments.length > 0) {
+            const videoAttachment = videoAttachments[0];
+            logger.info(`Processing video: ${videoAttachment.filename} from ${email.from}`);
+            
+            try {
+              const videoUploadResult = await cloudinaryService.uploadVideo(
+                videoAttachment.content,
+                videoAttachment.filename
+              );
+              videoIntroUrl = videoUploadResult.url;
+              logger.info(`✅ Video uploaded successfully`);
+            } catch (videoError: any) {
+              logger.error(`Failed to upload video: ${videoError.message}`);
+              // Continue without video
+            }
+          }
 
           // Extract personal info from parsed data
           const { firstName, lastName, email: candidateEmail, phone } = 
@@ -203,6 +289,7 @@ class EmailAutomationJob {
             phone: phone || email.from,
             resumeUrl: uploadResult.url,
             resumeOriginalName: attachment.filename,
+            videoIntroUrl, // Include video if uploaded
             parsedData: {
               summary: parsedResume.summary,
               skills: parsedResume.skills,
@@ -211,6 +298,10 @@ class EmailAutomationJob {
               certifications: parsedResume.certifications,
               languages: parsedResume.languages,
             },
+            // AI validation results (only for email automation)
+            isValidResume: validation.isValid,
+            validationScore: validation.score,
+            validationReason: validation.reason,
             status: 'pending',
             source: 'email_automation',
             sourceEmail: email.from,

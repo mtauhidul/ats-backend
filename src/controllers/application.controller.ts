@@ -189,6 +189,7 @@ export const getApplications = asyncHandler(
       .populate('jobId', 'title location employmentType')
       .populate('clientId', 'companyName logo')
       .populate('sourceEmailAccountId', 'name email')
+      .populate('teamMembers', 'firstName lastName email')
       .sort(sort)
       .skip(skip)
       .limit(limit);
@@ -215,7 +216,8 @@ export const getApplicationById = asyncHandler(
       .populate('jobId', 'title description location employmentType salaryRange')
       .populate('clientId', 'companyName logo website industry')
       .populate('sourceEmailAccountId', 'name email')
-      .populate('candidateId', 'firstName lastName email status currentStage aiScore');
+      .populate('candidateId', 'firstName lastName email status currentStage aiScore')
+      .populate('teamMembers', 'firstName lastName email');
 
     if (!application) {
       throw new NotFoundError('Application not found');

@@ -23,7 +23,26 @@ import {
 
 const router = Router();
 
-// All application routes require authentication
+/**
+ * PUBLIC ROUTES (No Authentication Required)
+ * Used for public job application submissions
+ */
+
+/**
+ * @route   POST /api/applications/public/apply
+ * @desc    Create a new application from public job page
+ * @access  Public
+ */
+router.post(
+  '/public/apply',
+  validate(createApplicationSchema),
+  createApplication
+);
+
+/**
+ * AUTHENTICATED ROUTES
+ * These routes require authentication
+ */
 router.use(authenticate);
 
 /**
@@ -148,6 +167,126 @@ router.post(
   '/bulk/delete',
   requireRole('admin', 'super_admin'),
   bulkDeleteApplications
+);
+
+/**
+ * @route   POST /api/applications/:id/team-members
+ * @desc    Assign team member(s) to an application
+ * @access  Recruiter, Admin, Super Admin
+ */
+router.post(
+  '/:id/team-members',
+  requireRole('recruiter', 'admin', 'super_admin'),
+  async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+      const { teamMemberId } = req.body;
+
+      if (!teamMemberId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Team member ID is required',
+        });
+      }
+
+      const Application = require('../models/Application').default;
+      const application = await Application.findById(id);
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: 'Application not found',
+        });
+      }
+
+      // Initialize teamMembers array if it doesn't exist
+      if (!application.teamMembers) {
+        application.teamMembers = [];
+      }
+
+      // Check if team member is already assigned
+      if (application.teamMembers.includes(teamMemberId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Team member already assigned to this application',
+        });
+      }
+
+      // Add team member
+      application.teamMembers.push(teamMemberId);
+      await application.save();
+
+      // Fetch updated application with populated team members
+      const updatedApplication = await Application.findById(id)
+        .populate('teamMembers', 'firstName lastName email');
+
+      res.json({
+        success: true,
+        data: updatedApplication,
+        message: 'Team member assigned successfully',
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to assign team member',
+        error: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * @route   DELETE /api/applications/:id/team-members/:memberId
+ * @desc    Remove team member from an application
+ * @access  Recruiter, Admin, Super Admin
+ */
+router.delete(
+  '/:id/team-members/:memberId',
+  requireRole('recruiter', 'admin', 'super_admin'),
+  async (req: any, res: any) => {
+    try {
+      const { id, memberId } = req.params;
+
+      const Application = require('../models/Application').default;
+      const application = await Application.findById(id);
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: 'Application not found',
+        });
+      }
+
+      if (!application.teamMembers || application.teamMembers.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No team members assigned to this application',
+        });
+      }
+
+      // Remove team member
+      application.teamMembers = application.teamMembers.filter(
+        (tm: any) => tm.toString() !== memberId
+      );
+      await application.save();
+
+      // Fetch updated application with populated team members
+      const updatedApplication = await Application.findById(id)
+        .populate('teamMembers', 'firstName lastName email');
+
+      res.json({
+        success: true,
+        data: updatedApplication,
+        message: 'Team member removed successfully',
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to remove team member',
+        error: error.message,
+      });
+    }
+  }
 );
 
 export default router;

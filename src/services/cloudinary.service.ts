@@ -78,11 +78,14 @@ class CloudinaryService {
     fileBuffer: Buffer,
     filename: string
   ): Promise<UploadResult> {
+    // Note: We don't use allowedFormats for 'raw' resource type
+    // because Cloudinary doesn't properly recognize doc/docx formats
+    // Validation is done at the multer middleware level instead
     return this.uploadFile(fileBuffer, {
       folder: 'ats/resumes',
       filename: `resume_${Date.now()}_${filename}`,
       resourceType: 'raw',
-      allowedFormats: ['pdf', 'doc', 'docx'],
+      // Remove allowedFormats - causes issues with docx files
     });
   }
 
@@ -113,6 +116,21 @@ class CloudinaryService {
       filename: `logo_${Date.now()}_${filename}`,
       resourceType: 'image',
       allowedFormats: ['jpg', 'jpeg', 'png', 'svg', 'webp'],
+    });
+  }
+
+  /**
+   * Upload video introduction
+   */
+  async uploadVideo(
+    fileBuffer: Buffer,
+    filename: string
+  ): Promise<UploadResult> {
+    return this.uploadFile(fileBuffer, {
+      folder: 'ats/videos',
+      filename: `video_${Date.now()}_${filename}`,
+      resourceType: 'video',
+      allowedFormats: ['mp4', 'mov', 'avi', 'webm', 'mkv'],
     });
   }
 

@@ -15,7 +15,7 @@ import {
  */
 async function calculateClientStatistics(clientId: string) {
   const Job = mongoose.model('Job');
-  const Application = mongoose.model('Application');
+  const Candidate = mongoose.model('Candidate');
 
   // Get all jobs for this client
   const jobs = await Job.find({ clientId }).select('status');
@@ -25,17 +25,19 @@ async function calculateClientStatistics(clientId: string) {
   const closedJobs = jobs.filter((j: any) => j.status === 'closed').length;
   const draftJobs = jobs.filter((j: any) => j.status === 'draft').length;
 
-  // Get all applications for this client's jobs
+  // Get all candidates for this client's jobs
   const jobIds = jobs.map((j: any) => j._id);
-  const applications = await Application.find({ jobId: { $in: jobIds } }).select('status createdAt');
+  const candidates = await Candidate.find({ 
+    jobIds: { $in: jobIds } 
+  }).select('status createdAt');
 
-  const totalCandidates = applications.length;
-  const activeCandidates = applications.filter((a: any) => 
-    ['applied', 'screening', 'interview', 'offer'].includes(a.status)
+  const totalCandidates = candidates.length;
+  const activeCandidates = candidates.filter((c: any) => 
+    ['active', 'interviewing', 'offered'].includes(c.status)
   ).length;
-  const hiredCandidates = applications.filter((a: any) => a.status === 'hired').length;
-  const rejectedCandidates = applications.filter((a: any) => 
-    ['rejected', 'withdrawn'].includes(a.status)
+  const hiredCandidates = candidates.filter((c: any) => c.status === 'hired').length;
+  const rejectedCandidates = candidates.filter((c: any) => 
+    ['rejected', 'withdrawn'].includes(c.status)
   ).length;
 
   // Calculate success rate
@@ -43,15 +45,15 @@ async function calculateClientStatistics(clientId: string) {
     ? Math.round((hiredCandidates / totalCandidates) * 100) 
     : 0;
 
-  // Calculate average time to hire (simplified - days from application to hired)
-  const hiredApps = applications.filter((a: any) => a.status === 'hired');
+  // Calculate average time to hire (simplified - days from candidate creation to hired)
+  const hiredCandidates_list = candidates.filter((c: any) => c.status === 'hired');
   let averageTimeToHire = 0;
-  if (hiredApps.length > 0) {
-    const totalDays = hiredApps.reduce((sum: number, app: any) => {
-      const days = Math.floor((Date.now() - new Date(app.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+  if (hiredCandidates_list.length > 0) {
+    const totalDays = hiredCandidates_list.reduce((sum: number, candidate: any) => {
+      const days = Math.floor((Date.now() - new Date(candidate.createdAt).getTime()) / (1000 * 60 * 60 * 24));
       return sum + days;
     }, 0);
-    averageTimeToHire = Math.round(totalDays / hiredApps.length);
+    averageTimeToHire = Math.round(totalDays / hiredCandidates_list.length);
   }
 
   return {

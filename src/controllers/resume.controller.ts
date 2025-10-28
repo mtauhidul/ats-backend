@@ -1,13 +1,19 @@
-import { Request, Response } from 'express';
-import { Application, Job } from '../models';
-import openaiService from '../services/openai.service';
-import affindaService from '../services/affinda.service';
-import cloudinaryService from '../services/cloudinary.service';
-import { asyncHandler, successResponse } from '../utils/helpers';
-import { ValidationError as CustomValidationError, NotFoundError } from '../utils/errors';
-import logger from '../utils/logger';
-import { ParseResumeInput, ParseAndSaveResumeInput } from '../types/resume.types';
-import { config } from '../config';
+import { Request, Response } from "express";
+import { config } from "../config";
+import { Application, Job } from "../models";
+import affindaService from "../services/affinda.service";
+import cloudinaryService from "../services/cloudinary.service";
+import openaiService from "../services/openai.service";
+import {
+  ParseAndSaveResumeInput,
+  ParseResumeInput,
+} from "../types/resume.types";
+import {
+  ValidationError as CustomValidationError,
+  NotFoundError,
+} from "../utils/errors";
+import { asyncHandler, successResponse } from "../utils/helpers";
+import logger from "../utils/logger";
 
 /**
  * Parse resume file and return structured JSON
@@ -17,14 +23,21 @@ export const parseResume = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     // Apply default values if options not provided (multipart/form-data with only file upload)
     const options: ParseResumeInput = {
-      extractSkills: req.body.extractSkills !== undefined ? req.body.extractSkills : true,
-      extractEducation: req.body.extractEducation !== undefined ? req.body.extractEducation : true,
-      extractExperience: req.body.extractExperience !== undefined ? req.body.extractExperience : true,
+      extractSkills:
+        req.body.extractSkills !== undefined ? req.body.extractSkills : true,
+      extractEducation:
+        req.body.extractEducation !== undefined
+          ? req.body.extractEducation
+          : true,
+      extractExperience:
+        req.body.extractExperience !== undefined
+          ? req.body.extractExperience
+          : true,
     };
 
     // Check if file was uploaded
     if (!req.file) {
-      throw new CustomValidationError('No resume file uploaded');
+      throw new CustomValidationError("No resume file uploaded");
     }
 
     logger.info(`Parsing resume: ${req.file.originalname}`);
@@ -34,17 +47,23 @@ export const parseResume = asyncHandler(
 
     if (config.affinda.useAffinda && config.affinda.apiToken) {
       try {
-        logger.info('Using Affinda parser (primary)');
-        parsedData = await affindaService.parseResume(req.file.buffer, req.file.originalname);
+        logger.info("Using Affinda parser (primary)");
+        parsedData = await affindaService.parseResume(
+          req.file.buffer,
+          req.file.originalname
+        );
       } catch (affindaError) {
-        logger.warn('Affinda parsing failed, falling back to OpenAI:', affindaError);
+        logger.warn(
+          "Affinda parsing failed, falling back to OpenAI:",
+          affindaError
+        );
         parsedData = await openaiService.parseResumeFromFile(
           req.file.buffer,
           req.file.mimetype
         );
       }
     } else {
-      logger.info('Using OpenAI parser');
+      logger.info("Using OpenAI parser");
       parsedData = await openaiService.parseResumeFromFile(
         req.file.buffer,
         req.file.mimetype
@@ -74,9 +93,11 @@ export const parseResume = asyncHandler(
     response.certifications = parsedData.certifications;
     response.extractedText = parsedData.extractedText; // Full raw text for validation
 
-    logger.info(`Resume parsed successfully: ${parsedData.personalInfo?.email || 'unknown'}`);
+    logger.info(
+      `Resume parsed successfully: ${parsedData.personalInfo?.email || "unknown"}`
+    );
 
-    successResponse(res, response, 'Resume parsed successfully');
+    successResponse(res, response, "Resume parsed successfully");
   }
 );
 
@@ -90,33 +111,41 @@ export const parseAndSaveResume = asyncHandler(
 
     // Check if file was uploaded
     if (!req.file) {
-      throw new CustomValidationError('No resume file uploaded');
+      throw new CustomValidationError("No resume file uploaded");
     }
 
     // Verify job exists
     const job = await Job.findById(data.jobId);
     if (!job) {
-      throw new NotFoundError('Job not found');
+      throw new NotFoundError("Job not found");
     }
 
-    logger.info(`Parsing and saving resume: ${req.file.originalname} for job ${job.title}`);
+    logger.info(
+      `Parsing and saving resume: ${req.file.originalname} for job ${job.title}`
+    );
 
     // Parse resume using Affinda (primary) or OpenAI (fallback)
     let parsedData;
 
     if (config.affinda.useAffinda && config.affinda.apiToken) {
       try {
-        logger.info('Using Affinda parser (primary)');
-        parsedData = await affindaService.parseResume(req.file.buffer, req.file.originalname);
+        logger.info("Using Affinda parser (primary)");
+        parsedData = await affindaService.parseResume(
+          req.file.buffer,
+          req.file.originalname
+        );
       } catch (affindaError) {
-        logger.warn('Affinda parsing failed, falling back to OpenAI:', affindaError);
+        logger.warn(
+          "Affinda parsing failed, falling back to OpenAI:",
+          affindaError
+        );
         parsedData = await openaiService.parseResumeFromFile(
           req.file.buffer,
           req.file.mimetype
         );
       }
     } else {
-      logger.info('Using OpenAI parser');
+      logger.info("Using OpenAI parser");
       parsedData = await openaiService.parseResumeFromFile(
         req.file.buffer,
         req.file.mimetype
@@ -125,7 +154,9 @@ export const parseAndSaveResume = asyncHandler(
 
     // Validate that we got email from parsed data
     if (!parsedData.personalInfo?.email) {
-      throw new CustomValidationError('Could not extract email from resume. Please provide it manually.');
+      throw new CustomValidationError(
+        "Could not extract email from resume. Please provide it manually."
+      );
     }
 
     // Check if application already exists for this job and email
@@ -151,8 +182,8 @@ export const parseAndSaveResume = asyncHandler(
       jobId: data.jobId,
       clientId: data.clientId || job.clientId,
       source: data.source,
-      firstName: parsedData.personalInfo.firstName || '',
-      lastName: parsedData.personalInfo.lastName || '',
+      firstName: parsedData.personalInfo.firstName || "",
+      lastName: parsedData.personalInfo.lastName || "",
       email: parsedData.personalInfo.email,
       phone: parsedData.personalInfo.phone,
       resumeUrl,
@@ -165,14 +196,14 @@ export const parseAndSaveResume = asyncHandler(
         languages: parsedData.languages,
         certifications: parsedData.certifications,
       },
-      status: 'pending',
+      status: "pending",
       notes: data.notes,
     });
 
     // Populate job and client data
     await application.populate([
-      { path: 'jobId', select: 'title location employmentType' },
-      { path: 'clientId', select: 'name logo' },
+      { path: "jobId", select: "title location employmentType" },
+      { path: "clientId", select: "name logo" },
     ]);
 
     logger.info(
@@ -182,7 +213,7 @@ export const parseAndSaveResume = asyncHandler(
     successResponse(
       res,
       application,
-      'Resume parsed and application created successfully',
+      "Resume parsed and application created successfully",
       201
     );
   }
@@ -199,11 +230,13 @@ export const reparseApplicationResume = asyncHandler(
     const application = await Application.findById(id);
 
     if (!application) {
-      throw new NotFoundError('Application not found');
+      throw new NotFoundError("Application not found");
     }
 
     if (!application.resumeUrl) {
-      throw new CustomValidationError('Application does not have a resume file');
+      throw new CustomValidationError(
+        "Application does not have a resume file"
+      );
     }
 
     logger.info(`Re-parsing resume for application: ${application.email}`);
@@ -211,7 +244,7 @@ export const reparseApplicationResume = asyncHandler(
     // Download resume from Cloudinary (this is a simplified version - you'd need to implement actual download)
     // For now, we'll throw an error as this requires additional implementation
     throw new CustomValidationError(
-      'Re-parsing from URL not yet implemented. Please re-upload the resume.'
+      "Re-parsing from URL not yet implemented. Please re-upload the resume."
     );
 
     // TODO: Implement resume download from Cloudinary, then re-parse

@@ -69,6 +69,7 @@ export interface IApplication extends Document {
   // Assignment
   assignedTo?: mongoose.Types.ObjectId;
   reviewedBy?: mongoose.Types.ObjectId;
+  teamMembers?: mongoose.Types.ObjectId[]; // Array of team member IDs
   
   // Metadata
   createdBy?: mongoose.Types.ObjectId;
@@ -238,6 +239,10 @@ const ApplicationSchema = new Schema<IApplication>(
       type: Schema.Types.ObjectId,
       ref: 'User',
     },
+    teamMembers: [{
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    }],
     
     // Metadata
     createdBy: {

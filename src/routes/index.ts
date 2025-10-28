@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import emailAccountRoutes from './emailAccount.routes';
+import emailAutomationRoutes from './emailAutomation.routes';
 import resumeRoutes from './resume.routes';
 import applicationRoutes from './application.routes';
 import candidateRoutes from './candidate.routes';
@@ -25,6 +26,7 @@ router.use('/emails', emailRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/messages', messageRoutes);
 router.use('/email-accounts', emailAccountRoutes);
+router.use('/email-automation', emailAutomationRoutes);
 router.use('/resumes', resumeRoutes);
 router.use('/applications', applicationRoutes);
 router.use('/candidates', candidateRoutes);

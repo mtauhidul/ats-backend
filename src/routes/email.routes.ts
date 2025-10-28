@@ -12,6 +12,7 @@ import {
   getCandidateEmails,
   getEmailStats,
 } from '../controllers/email.controller';
+import { emailAutomationJob } from '../jobs/emailAutomation.job';
 
 const router = express.Router();
 
@@ -121,6 +122,110 @@ router.delete(
   '/:id',
   requireRole('admin', 'super_admin'),
   deleteEmail
+);
+
+// ============================================
+// EMAIL AUTOMATION ROUTES (for frontend Settings > Email Automation tab)
+// ============================================
+
+/**
+ * @route   GET /api/emails/automation/status
+ * @desc    Get email automation status
+ * @access  Admin, Super Admin
+ */
+router.get(
+  '/automation/status',
+  requireRole('admin', 'super_admin'),
+  (_req, res) => {
+    try {
+      const status = emailAutomationJob.getStatus();
+      res.json({
+        success: true,
+        data: status,
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get automation status',
+        error: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * @route   POST /api/emails/automation/start
+ * @desc    Enable/start email automation
+ * @access  Admin, Super Admin
+ */
+router.post(
+  '/automation/start',
+  requireRole('admin', 'super_admin'),
+  (_req, res) => {
+    try {
+      emailAutomationJob.enable();
+      res.json({
+        success: true,
+        message: 'Email automation enabled',
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to enable automation',
+        error: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * @route   POST /api/emails/automation/stop
+ * @desc    Disable/stop email automation
+ * @access  Admin, Super Admin
+ */
+router.post(
+  '/automation/stop',
+  requireRole('admin', 'super_admin'),
+  (_req, res) => {
+    try {
+      emailAutomationJob.disable();
+      res.json({
+        success: true,
+        message: 'Email automation disabled',
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to disable automation',
+        error: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * @route   POST /api/emails/automation/trigger
+ * @desc    Manually trigger email processing
+ * @access  Admin, Super Admin
+ */
+router.post(
+  '/automation/trigger',
+  requireRole('admin', 'super_admin'),
+  async (_req, res) => {
+    try {
+      await emailAutomationJob.triggerManual();
+      res.json({
+        success: true,
+        message: 'Email processing triggered successfully',
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to trigger email processing',
+        error: error.message,
+      });
+    }
+  }
 );
 
 export default router;
