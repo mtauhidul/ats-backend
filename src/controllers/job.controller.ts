@@ -226,6 +226,39 @@ export const updateJob = asyncHandler(
       if (!pipeline) {
         throw new NotFoundError("Pipeline not found");
       }
+
+      // Get the first stage of the pipeline
+      const firstStage = pipeline.stages && pipeline.stages.length > 0 
+        ? pipeline.stages[0] 
+        : null;
+
+      if (firstStage) {
+        // Update all candidates associated with this job to have the first stage
+        const { Candidate } = await import('../models');
+        
+        // Find all candidates with this job in their jobIds array
+        const candidates = await Candidate.find({
+          jobIds: id,
+          currentPipelineStageId: null // Only update candidates without a stage
+        });
+
+        if (candidates.length > 0) {
+          // Bulk update all candidates to set the first stage
+          await Candidate.updateMany(
+            {
+              jobIds: id,
+              currentPipelineStageId: null
+            },
+            {
+              $set: { currentPipelineStageId: firstStage._id }
+            }
+          );
+
+          logger.info(
+            `Assigned ${candidates.length} candidates to first stage "${firstStage.name}" of pipeline "${pipeline.name}"`
+          );
+        }
+      }
     }
 
     // Update job using findByIdAndUpdate with proper options

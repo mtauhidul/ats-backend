@@ -116,6 +116,19 @@ export const updateUser = asyncHandler(
     delete updates.createdAt;
     delete updates.updatedAt;
 
+    // If role is being changed to admin, automatically grant all permissions
+    if (updates.role === 'admin') {
+      updates.permissions = {
+        canManageClients: true,
+        canManageJobs: true,
+        canReviewApplications: true,
+        canManageCandidates: true,
+        canSendEmails: true,
+        canManageTeam: true,
+        canAccessAnalytics: true,
+      };
+    }
+
     const user = await User.findByIdAndUpdate(
       id,
       { ...updates },

@@ -17,3 +17,4 @@ export { TeamMember, ITeamMember } from './TeamMember';
 export { EmailAccount, IEmailAccount } from './EmailAccount';
 export { Notification, INotification } from './Notification';
 export { Message, IMessage } from './Message';
+export { default as ActivityLog, IActivityLog } from './ActivityLog';

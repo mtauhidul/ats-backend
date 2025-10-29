@@ -20,6 +20,15 @@ export interface IUser extends Document {
   passwordResetExpires?: Date;
   refreshToken?: string;
   lastLogin?: Date;
+  permissions?: {
+    canManageClients?: boolean;
+    canManageJobs?: boolean;
+    canReviewApplications?: boolean;
+    canManageCandidates?: boolean;
+    canSendEmails?: boolean;
+    canManageTeam?: boolean;
+    canAccessAnalytics?: boolean;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -111,6 +120,18 @@ const UserSchema = new Schema<IUser>(
     lastLogin: {
       type: Date,
     },
+    permissions: {
+      type: {
+        canManageClients: { type: Boolean, default: false },
+        canManageJobs: { type: Boolean, default: false },
+        canReviewApplications: { type: Boolean, default: true },
+        canManageCandidates: { type: Boolean, default: false },
+        canSendEmails: { type: Boolean, default: true },
+        canManageTeam: { type: Boolean, default: false },
+        canAccessAnalytics: { type: Boolean, default: false },
+      },
+      default: () => ({}),
+    },
   },
   {
     timestamps: true,
@@ -146,6 +167,7 @@ UserSchema.methods.toJSON = function () {
     isActive: user.isActive,
     emailVerified: user.emailVerified,
     lastLogin: user.lastLogin,
+    permissions: user.permissions,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };

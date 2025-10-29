@@ -15,6 +15,7 @@ import {
   TokenPayload,
 } from '../utils/auth';
 import { sendInvitationEmail, sendMagicLinkEmail, sendPasswordResetEmail } from '../services/email.service';
+import { logActivity } from '../services/activity.service';
 import logger from '../utils/logger';
 
 /**
@@ -22,7 +23,7 @@ import logger from '../utils/logger';
  */
 export const register = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const { email, firstName, lastName, role, department, title } = req.body;
+    const { email, firstName, lastName, role, department, title, phone, permissions } = req.body;
 
     // Validate required fields
     if (!email || !firstName || !lastName) {
@@ -46,19 +47,44 @@ export const register = asyncHandler(
     const emailVerificationToken = generateToken();
     const emailVerificationExpires = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
 
+    // Set default permissions based on role
+    const userRole = role || 'recruiter';
+    const defaultPermissions = userRole === 'admin' ? {
+      canManageClients: true,
+      canManageJobs: true,
+      canReviewApplications: true,
+      canManageCandidates: true,
+      canSendEmails: true,
+      canManageTeam: true,
+      canAccessAnalytics: true,
+    } : {
+      canManageClients: false,
+      canManageJobs: false,
+      canReviewApplications: true,
+      canManageCandidates: userRole === 'recruiter',
+      canSendEmails: true,
+      canManageTeam: false,
+      canAccessAnalytics: false,
+    };
+
+    // Use custom permissions if provided, otherwise use defaults
+    const userPermissions = permissions ? { ...defaultPermissions, ...permissions } : defaultPermissions;
+
     // Create user
     const user = await User.create({
       email: email.toLowerCase(),
       firstName,
       lastName,
       passwordHash,
-      role: role || 'recruiter',
+      role: userRole,
       department,
       title,
+      phone,
       emailVerified: false,
       emailVerificationToken,
       emailVerificationExpires,
       isActive: true,
+      permissions: userPermissions,
     });
 
     logger.info(`New user registered: ${user.email} by ${req.user?.email}`);
@@ -113,6 +139,17 @@ export const registerFirstAdmin = asyncHandler(
     // Hash password
     const passwordHash = await hashPassword(password);
 
+    // Admin gets all permissions by default
+    const adminPermissions = {
+      canManageClients: true,
+      canManageJobs: true,
+      canReviewApplications: true,
+      canManageCandidates: true,
+      canSendEmails: true,
+      canManageTeam: true,
+      canAccessAnalytics: true,
+    };
+
     // Create first admin user (auto-verified)
     const admin = await User.create({
       email: email.toLowerCase(),
@@ -122,6 +159,7 @@ export const registerFirstAdmin = asyncHandler(
       role: 'admin',
       isActive: true,
       emailVerified: true, // Auto-verify first admin
+      permissions: adminPermissions,
     });
 
     // Generate tokens
@@ -214,6 +252,13 @@ export const login = asyncHandler(
     user.refreshToken = refreshToken;
     user.lastLogin = new Date();
     await user.save();
+
+    // Log activity
+    await logActivity({
+      userId: String(user._id),
+      action: 'login',
+      metadata: { method: 'password' }
+    });
 
     logger.info(`User logged in: ${user.email}`);
 
@@ -362,10 +407,9 @@ export const verifyEmail = asyncHandler(
       throw new BadRequestError('Invalid or expired verification token');
     }
 
-    // Mark email as verified and clear token
+    // Mark email as verified but DON'T clear the token yet
+    // Token will be cleared when user sets their password
     user.emailVerified = true;
-    user.emailVerificationToken = undefined;
-    user.emailVerificationExpires = undefined;
     await user.save();
 
     logger.info(`Email verified for: ${user.email}`);

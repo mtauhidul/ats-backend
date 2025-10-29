@@ -17,6 +17,7 @@ import emailRoutes from './email.routes';
 import notificationRoutes from './notification.routes';
 import messageRoutes from './message.routes';
 import webhookRoutes from './webhook.routes';
+import activityRoutes from './activity.routes';
 
 const router = Router();
 
@@ -39,6 +40,7 @@ router.use('/pipelines', pipelineRoutes);
 router.use('/categories', categoryRoutes);
 router.use('/tags', tagRoutes);
 router.use('/webhooks', webhookRoutes);
+router.use('/activities', activityRoutes);
 
 // Health check
 router.get('/health', (_req, res) => {
