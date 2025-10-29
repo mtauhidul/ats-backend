@@ -7,11 +7,11 @@ import { createCategorySchema, updateCategorySchema, categoryIdSchema } from '..
 const router = express.Router();
 router.use(authenticate);
 
-router.post('/', requireRole('admin', 'super_admin'), validate(createCategorySchema), createCategory);
+router.post('/', requireRole('admin'), validate(createCategorySchema), createCategory);
 router.get('/', getCategories);
 router.get('/:id', validate(categoryIdSchema), getCategoryById);
-router.put('/:id', requireRole('admin', 'super_admin'), validate(updateCategorySchema), updateCategory);
-router.patch('/:id', requireRole('admin', 'super_admin'), validate(updateCategorySchema), updateCategory);
-router.delete('/:id', requireRole('admin', 'super_admin'), validate(categoryIdSchema), deleteCategory);
+router.put('/:id', requireRole('admin'), validate(updateCategorySchema), updateCategory);
+router.patch('/:id', requireRole('admin'), validate(updateCategorySchema), updateCategory);
+router.delete('/:id', requireRole('admin'), validate(categoryIdSchema), deleteCategory);
 
 export default router;

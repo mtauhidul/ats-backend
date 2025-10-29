@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import authRoutes from './auth.routes';
 import emailAccountRoutes from './emailAccount.routes';
 import emailAutomationRoutes from './emailAutomation.routes';
 import resumeRoutes from './resume.routes';
@@ -15,10 +16,12 @@ import interviewRoutes from './interview.routes';
 import emailRoutes from './email.routes';
 import notificationRoutes from './notification.routes';
 import messageRoutes from './message.routes';
+import webhookRoutes from './webhook.routes';
 
 const router = Router();
 
 // API Routes
+router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/team', teamMemberRoutes);
 router.use('/interviews', interviewRoutes);
@@ -35,6 +38,7 @@ router.use('/clients', clientRoutes);
 router.use('/pipelines', pipelineRoutes);
 router.use('/categories', categoryRoutes);
 router.use('/tags', tagRoutes);
+router.use('/webhooks', webhookRoutes);
 
 // Health check
 router.get('/health', (_req, res) => {

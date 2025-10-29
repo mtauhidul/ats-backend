@@ -52,7 +52,7 @@ router.use(authenticate);
  */
 router.post(
   '/',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(createApplicationSchema),
   createApplication
 );
@@ -64,7 +64,7 @@ router.post(
  */
 router.get(
   '/',
-  requireRole('recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   validate(listApplicationsSchema),
   getApplications
 );
@@ -76,7 +76,7 @@ router.get(
  */
 router.get(
   '/stats',
-  requireRole('recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   getApplicationStats
 );
 
@@ -87,7 +87,7 @@ router.get(
  */
 router.get(
   '/:id',
-  requireRole('recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   validate(applicationIdSchema),
   getApplicationById
 );
@@ -99,7 +99,7 @@ router.get(
  */
 router.put(
   '/:id',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(updateApplicationSchema),
   updateApplication
 );
@@ -111,7 +111,7 @@ router.put(
  */
 router.patch(
   '/:id',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(updateApplicationSchema),
   updateApplication
 );
@@ -129,7 +129,7 @@ router.patch(
  */
 router.delete(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   validate(applicationIdSchema),
   deleteApplication
 );
@@ -141,7 +141,7 @@ router.delete(
  */
 router.post(
   '/:id/approve',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(approveApplicationSchema),
   approveApplication
 );
@@ -153,7 +153,7 @@ router.post(
  */
 router.post(
   '/bulk/status',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(bulkUpdateStatusSchema),
   bulkUpdateStatus
 );
@@ -165,7 +165,7 @@ router.post(
  */
 router.post(
   '/bulk/delete',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   bulkDeleteApplications
 );
 
@@ -176,7 +176,7 @@ router.post(
  */
 router.post(
   '/:id/team-members',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   async (req: any, res: any) => {
     try {
       const { id } = req.params;
@@ -242,7 +242,7 @@ router.post(
  */
 router.delete(
   '/:id/team-members/:memberId',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   async (req: any, res: any) => {
     try {
       const { id, memberId } = req.params;

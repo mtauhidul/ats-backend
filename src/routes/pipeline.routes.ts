@@ -28,7 +28,7 @@ router.use(authenticate);
  */
 router.post(
   '/',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   validate(createPipelineSchema),
   createPipeline
 );
@@ -72,7 +72,7 @@ router.get(
  */
 router.put(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   validate(updatePipelineSchema),
   updatePipeline
 );
@@ -84,7 +84,7 @@ router.put(
  */
 router.patch(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   validate(updatePipelineSchema),
   updatePipeline
 );
@@ -96,7 +96,7 @@ router.patch(
  */
 router.delete(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   validate(pipelineIdSchema),
   deletePipeline
 );

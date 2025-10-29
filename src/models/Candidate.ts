@@ -61,7 +61,28 @@ export interface ICandidate extends Document {
   applicationId: mongoose.Types.ObjectId; // Original application
   jobIds: mongoose.Types.ObjectId[]; // Jobs applied to
   
-  // Status & Pipeline
+  // Job Applications - Per-job tracking
+  jobApplications: Array<{
+    jobId: mongoose.Types.ObjectId;
+    applicationId?: mongoose.Types.ObjectId;
+    status: 'active' | 'interviewing' | 'offered' | 'hired' | 'rejected' | 'withdrawn';
+    appliedAt: Date;
+    lastStatusChange: Date;
+    currentStage?: string;
+    notes?: string;
+    rating?: number;
+    resumeScore?: number;
+    interviewScheduled?: Date;
+    rejectionReason?: string;
+    withdrawalReason?: string;
+    emailIds: mongoose.Types.ObjectId[];
+    lastEmailDate?: Date;
+    emailsSent: number;
+    emailsReceived: number;
+    lastEmailSubject?: string;
+  }>;
+  
+  // Status & Pipeline (for current/primary job application)
   status: 'active' | 'interviewing' | 'offered' | 'hired' | 'rejected' | 'withdrawn';
   currentPipelineStageId?: mongoose.Types.ObjectId;
   
@@ -220,7 +241,62 @@ const CandidateSchema = new Schema<ICandidate>(
       ref: 'Job',
     }],
     
-    // Status & Pipeline
+    // Job Applications - Per-job tracking
+    jobApplications: [{
+      jobId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Job',
+        required: true,
+      },
+      applicationId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Application',
+      },
+      status: {
+        type: String,
+        enum: ['active', 'interviewing', 'offered', 'hired', 'rejected', 'withdrawn'],
+        default: 'active',
+      },
+      appliedAt: {
+        type: Date,
+        default: Date.now,
+      },
+      lastStatusChange: {
+        type: Date,
+        default: Date.now,
+      },
+      currentStage: String,
+      notes: String,
+      rating: {
+        type: Number,
+        min: 1,
+        max: 5,
+      },
+      resumeScore: {
+        type: Number,
+        min: 0,
+        max: 100,
+      },
+      interviewScheduled: Date,
+      rejectionReason: String,
+      withdrawalReason: String,
+      emailIds: [{
+        type: Schema.Types.ObjectId,
+        ref: 'Email',
+      }],
+      lastEmailDate: Date,
+      emailsSent: {
+        type: Number,
+        default: 0,
+      },
+      emailsReceived: {
+        type: Number,
+        default: 0,
+      },
+      lastEmailSubject: String,
+    }],
+    
+    // Status & Pipeline (for current/primary job application)
     status: {
       type: String,
       enum: ['active', 'interviewing', 'offered', 'hired', 'rejected', 'withdrawn'],
@@ -230,9 +306,7 @@ const CandidateSchema = new Schema<ICandidate>(
     currentPipelineStageId: {
       type: Schema.Types.ObjectId,
       ref: 'Pipeline.stages',
-    },
-    
-    // Tags & Categories
+    },    // Tags & Categories
     tagIds: [{
       type: Schema.Types.ObjectId,
       ref: 'Tag',

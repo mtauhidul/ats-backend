@@ -52,7 +52,7 @@ router.use(authenticate);
  */
 router.post(
   '/',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(createJobSchema),
   createJob
 );
@@ -64,7 +64,7 @@ router.post(
  */
 router.get(
   '/stats',
-  requireRole('recruiter', 'admin', 'super_admin', 'hiring_manager'),
+  requireRole('recruiter', 'admin', 'hiring_manager'),
   getJobStats
 );
 
@@ -75,7 +75,7 @@ router.get(
  */
 router.put(
   '/:id',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(updateJobSchema),
   updateJob
 );
@@ -87,7 +87,7 @@ router.put(
  */
 router.patch(
   '/:id',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(updateJobSchema),
   updateJob
 );
@@ -99,7 +99,7 @@ router.patch(
  */
 router.delete(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   validate(jobIdSchema),
   deleteJob
 );
@@ -111,7 +111,7 @@ router.delete(
  */
 router.post(
   '/bulk/status',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(bulkUpdateJobStatusSchema),
   bulkUpdateJobStatus
 );

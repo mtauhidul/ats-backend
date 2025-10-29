@@ -1,16 +1,24 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IUser extends Document {
-  clerkId?: string; // Optional - for users created internally without Clerk auth
   email: string;
   firstName: string;
   lastName: string;
+  passwordHash: string;
   avatar?: string;
   phone?: string;
   title?: string; // Job title/position
   department?: string;
-  role: 'super_admin' | 'admin' | 'recruiter' | 'hiring_manager' | 'interviewer';
+  role: 'admin' | 'recruiter' | 'hiring_manager' | 'interviewer' | 'coordinator';
   isActive: boolean;
+  emailVerified: boolean;
+  emailVerificationToken?: string;
+  emailVerificationExpires?: Date;
+  magicLinkToken?: string;
+  magicLinkExpires?: Date;
+  passwordResetToken?: string;
+  passwordResetExpires?: Date;
+  refreshToken?: string;
   lastLogin?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -18,13 +26,6 @@ export interface IUser extends Document {
 
 const UserSchema = new Schema<IUser>(
   {
-    clerkId: {
-      type: String,
-      required: false, // Optional - not all users come through Clerk
-      unique: true,
-      sparse: true, // Only enforce uniqueness when clerkId is present
-      index: true,
-    },
     email: {
       type: String,
       required: true,
@@ -43,6 +44,11 @@ const UserSchema = new Schema<IUser>(
       required: true,
       trim: true,
     },
+    passwordHash: {
+      type: String,
+      required: true,
+      select: false, // Don't return password hash by default
+    },
     avatar: {
       type: String,
     },
@@ -60,7 +66,7 @@ const UserSchema = new Schema<IUser>(
     },
     role: {
       type: String,
-      enum: ['super_admin', 'admin', 'recruiter', 'hiring_manager', 'interviewer'],
+      enum: ['admin', 'recruiter', 'hiring_manager', 'interviewer', 'coordinator'],
       default: 'recruiter',
       index: true,
     },
@@ -68,6 +74,39 @@ const UserSchema = new Schema<IUser>(
       type: Boolean,
       default: true,
       index: true,
+    },
+    emailVerified: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    emailVerificationToken: {
+      type: String,
+      select: false,
+    },
+    emailVerificationExpires: {
+      type: Date,
+      select: false,
+    },
+    magicLinkToken: {
+      type: String,
+      select: false,
+    },
+    magicLinkExpires: {
+      type: Date,
+      select: false,
+    },
+    passwordResetToken: {
+      type: String,
+      select: false,
+    },
+    passwordResetExpires: {
+      type: Date,
+      select: false,
+    },
+    refreshToken: {
+      type: String,
+      select: false,
     },
     lastLogin: {
       type: Date,
@@ -79,9 +118,11 @@ const UserSchema = new Schema<IUser>(
 );
 
 // Indexes
-UserSchema.index({ clerkId: 1 });
 UserSchema.index({ email: 1 });
 UserSchema.index({ role: 1, isActive: 1 });
+UserSchema.index({ emailVerificationToken: 1 });
+UserSchema.index({ magicLinkToken: 1 });
+UserSchema.index({ passwordResetToken: 1 });
 
 // Virtual for full name
 UserSchema.virtual('fullName').get(function (this: IUser) {
@@ -93,7 +134,6 @@ UserSchema.methods.toJSON = function () {
   const user = this.toObject();
   return {
     id: user._id,
-    clerkId: user.clerkId,
     email: user.email,
     firstName: user.firstName,
     lastName: user.lastName,
@@ -104,6 +144,7 @@ UserSchema.methods.toJSON = function () {
     department: user.department,
     role: user.role,
     isActive: user.isActive,
+    emailVerified: user.emailVerified,
     lastLogin: user.lastLogin,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,

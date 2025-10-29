@@ -47,6 +47,15 @@ export const createCandidate = asyncHandler(
       jobIds: [data.jobId], // First job
       status: data.status || 'active',
       source: 'manual_import',
+      jobApplications: [{
+        jobId: data.jobId,
+        status: data.status || 'active',
+        appliedAt: new Date(),
+        lastStatusChange: new Date(),
+        emailIds: [],
+        emailsSent: 0,
+        emailsReceived: 0,
+      }],
     });
 
     // Populate references
@@ -194,6 +203,14 @@ export const getCandidateById = asyncHandler(
     const candidate = await Candidate.findById(id)
       .populate({
         path: 'jobIds',
+        select: 'title description location employmentType salaryRange requirements skills clientId',
+        populate: {
+          path: 'clientId',
+          select: 'companyName logo email industry address'
+        }
+      })
+      .populate({
+        path: 'jobApplications.jobId',
         select: 'title description location employmentType salaryRange requirements skills clientId',
         populate: {
           path: 'clientId',

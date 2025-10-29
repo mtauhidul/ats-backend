@@ -3,7 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface ITeamMember extends Document {
   userId: mongoose.Types.ObjectId;
   jobId?: mongoose.Types.ObjectId; // Optional - team members can be created without job assignment
-  role: 'recruiter' | 'hiring_manager' | 'interviewer' | 'coordinator';
+  role: 'admin' | 'recruiter' | 'hiring_manager' | 'interviewer' | 'coordinator';
   permissions: {
     canViewApplications: boolean;
     canReviewApplications: boolean;
@@ -33,7 +33,7 @@ const TeamMemberSchema = new Schema<ITeamMember>(
     },
     role: {
       type: String,
-      enum: ['recruiter', 'hiring_manager', 'interviewer', 'coordinator'],
+      enum: ['admin', 'recruiter', 'hiring_manager', 'interviewer', 'coordinator'],
       required: true,
       index: true,
     },

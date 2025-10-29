@@ -149,7 +149,7 @@ router.use(authenticate);
  */
 router.post(
   '/parse',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   uploadResume,
   validate(parseResumeSchema),
   parseResume
@@ -162,7 +162,7 @@ router.post(
  */
 router.post(
   '/upload',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   uploadResume,
   async (req: any, res: any) => {
     try {
@@ -198,7 +198,7 @@ router.post(
  */
 router.post(
   '/parse-and-save',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   uploadResume,
   validate(parseAndSaveResumeSchema),
   parseAndSaveResume
@@ -211,7 +211,7 @@ router.post(
  */
 router.post(
   '/reparse/:id',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   reparseApplicationResume
 );
 

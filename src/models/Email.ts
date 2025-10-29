@@ -19,9 +19,18 @@ export interface IEmail extends Document {
   }>;
   
   // Status
-  status: 'sent' | 'failed' | 'received' | 'draft';
+  status: 'sent' | 'delivered' | 'delayed' | 'bounced' | 'complained' | 'failed' | 'received' | 'draft';
   sentAt?: Date;
   receivedAt?: Date;
+  deliveredAt?: Date;
+  bouncedAt?: Date;
+  openedAt?: Date;
+  clickedAt?: Date;
+  openCount?: number;
+  clickCount?: number;
+  
+  // Resend integration
+  resendId?: string; // Resend email ID for tracking
   
   // Relationships
   candidateId?: mongoose.Types.ObjectId;
@@ -101,7 +110,7 @@ const EmailSchema = new Schema<IEmail>(
     // Status
     status: {
       type: String,
-      enum: ['sent', 'failed', 'received', 'draft'],
+      enum: ['sent', 'delivered', 'delayed', 'bounced', 'complained', 'failed', 'received', 'draft'],
       default: 'draft',
       index: true,
     },
@@ -112,6 +121,36 @@ const EmailSchema = new Schema<IEmail>(
     receivedAt: {
       type: Date,
       index: true,
+    },
+    deliveredAt: {
+      type: Date,
+      index: true,
+    },
+    bouncedAt: {
+      type: Date,
+      index: true,
+    },
+    openedAt: {
+      type: Date,
+    },
+    clickedAt: {
+      type: Date,
+    },
+    openCount: {
+      type: Number,
+      default: 0,
+    },
+    clickCount: {
+      type: Number,
+      default: 0,
+    },
+    
+    // Resend integration
+    resendId: {
+      type: String,
+      index: true,
+      unique: true,
+      sparse: true, // Allow null values
     },
     
     // Relationships

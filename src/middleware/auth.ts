@@ -1,14 +1,8 @@
-import { createClerkClient } from "@clerk/clerk-sdk-node";
 import { NextFunction, Request, Response } from "express";
-import { config } from "../config";
 import { IUser, User } from "../models";
 import { AuthenticationError, AuthorizationError } from "../utils/errors";
+import { verifyAccessToken, TokenPayload } from "../utils/auth";
 import logger from "../utils/logger";
-
-// Initialize Clerk client with explicit secret key
-const clerkClient = createClerkClient({
-  secretKey: config.clerk.secretKey,
-});
 
 // Extend Express Request to include user
 declare global {
@@ -16,13 +10,13 @@ declare global {
     interface Request {
       user?: IUser;
       userId?: string;
-      clerkId?: string;
+      tokenPayload?: TokenPayload;
     }
   }
 }
 
 /**
- * Verify Clerk JWT token and attach user to request
+ * Verify JWT token and attach user to request
  */
 export const authenticate = async (
   req: Request,
@@ -38,50 +32,35 @@ export const authenticate = async (
 
     const token = authHeader.substring(7);
 
-    // Verify JWT token with Clerk (automatically fetches public key from JWKS)
-    const payload = await clerkClient.verifyToken(token);
+    // Verify JWT token
+    const payload = verifyAccessToken(token);
 
-    if (!payload || !payload.sub) {
-      throw new AuthenticationError("Invalid token");
+    if (!payload) {
+      throw new AuthenticationError("Invalid or expired token");
     }
 
-    const clerkId = payload.sub;
-
-    // Find or create user in our database
-    let user = await User.findOne({ clerkId });
+    // Find user in database
+    const user = await User.findById(payload.userId);
 
     if (!user) {
-      // Get user details from Clerk
-      const clerkUser = await clerkClient.users.getUser(clerkId);
+      throw new AuthenticationError("User not found");
+    }
 
-      // Create user in our database
-      user = await User.create({
-        clerkId,
-        email: clerkUser.emailAddresses[0]?.emailAddress || "",
-        firstName: clerkUser.firstName || "",
-        lastName: clerkUser.lastName || "",
-        avatar: clerkUser.imageUrl,
-        role: "recruiter", // Default role
-        isActive: true,
-        lastLogin: new Date(),
-      });
-
-      logger.info(`New user created from Clerk: ${user.email}`);
-    } else {
-      // Update last login
-      user.lastLogin = new Date();
-      await user.save();
+    // Check if user is active
+    if (!user.isActive) {
+      throw new AuthenticationError("Your account has been deactivated");
     }
 
     // Attach user to request
     req.user = user;
-    req.userId = (user._id as any).toString();
-    req.clerkId = clerkId;
+    req.userId = String(user._id);
+    req.tokenPayload = payload;
 
     next();
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error("Authentication error:", error);
-    next(new AuthenticationError(error.message || "Authentication failed"));
+    const errorMessage = (error as Error).message || "Authentication failed";
+    next(new AuthenticationError(errorMessage));
   }
 };
 
@@ -109,14 +88,9 @@ export const requireRole = (...allowedRoles: string[]) => {
 };
 
 /**
- * Require admin or super_admin role
+ * Require admin role
  */
-export const requireAdmin = requireRole("admin", "super_admin");
-
-/**
- * Require super_admin role only
- */
-export const requireSuperAdmin = requireRole("super_admin");
+export const requireAdmin = requireRole("admin");
 
 /**
  * Check if user has permission
@@ -127,8 +101,8 @@ export const hasPermission = (requiredPermission: string) => {
       return next(new AuthenticationError("User not authenticated"));
     }
 
-    // Super admins have all permissions
-    if (req.user.role === "super_admin") {
+    // Admins have all permissions
+    if (req.user.role === "admin") {
       return next();
     }
 
@@ -201,19 +175,15 @@ export const optionalAuth = async (
 
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.substring(7);
-      const session = await clerkClient.sessions.verifySession(
-        token,
-        config.clerk.jwtKey
-      );
+      const payload = verifyAccessToken(token);
 
-      if (session) {
-        const clerkId = session.userId;
-        const user = await User.findOne({ clerkId });
+      if (payload) {
+        const user = await User.findById(payload.userId);
 
-        if (user) {
+        if (user && user.isActive) {
           req.user = user;
-          req.userId = (user._id as any).toString();
-          req.clerkId = clerkId;
+          req.userId = String(user._id);
+          req.tokenPayload = payload;
         }
       }
     }

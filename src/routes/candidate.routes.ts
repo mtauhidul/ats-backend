@@ -39,7 +39,7 @@ router.use(authenticate);
  */
 router.post(
   '/',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(createCandidateSchema),
   createCandidate
 );
@@ -51,7 +51,7 @@ router.post(
  */
 router.get(
   '/',
-  requireRole('recruiter', 'admin', 'super_admin', 'hiring_manager'),
+  requireRole('recruiter', 'admin', 'hiring_manager'),
   validate(listCandidatesSchema),
   getCandidates
 );
@@ -63,7 +63,7 @@ router.get(
  */
 router.get(
   '/stats',
-  requireRole('recruiter', 'admin', 'super_admin', 'hiring_manager'),
+  requireRole('recruiter', 'admin', 'hiring_manager'),
   getCandidateStats
 );
 
@@ -74,7 +74,7 @@ router.get(
  */
 router.get(
   '/top',
-  requireRole('recruiter', 'admin', 'super_admin', 'hiring_manager'),
+  requireRole('recruiter', 'admin', 'hiring_manager'),
   getTopCandidates
 );
 
@@ -85,7 +85,7 @@ router.get(
  */
 router.get(
   '/:id',
-  requireRole('recruiter', 'admin', 'super_admin', 'hiring_manager', 'interviewer'),
+  requireRole('recruiter', 'admin', 'hiring_manager', 'interviewer'),
   validate(candidateIdSchema),
   getCandidateById
 );
@@ -97,7 +97,7 @@ router.get(
  */
 router.put(
   '/:id',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(updateCandidateSchema),
   updateCandidate
 );
@@ -109,7 +109,7 @@ router.put(
  */
 router.patch(
   '/:id',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(updateCandidateSchema),
   updateCandidate
 );
@@ -121,7 +121,7 @@ router.patch(
  */
 router.delete(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   validate(candidateIdSchema),
   deleteCandidate
 );
@@ -133,7 +133,7 @@ router.delete(
  */
 router.post(
   '/:id/move-stage',
-  requireRole('recruiter', 'admin', 'super_admin', 'hiring_manager'),
+  requireRole('recruiter', 'admin', 'hiring_manager'),
   validate(moveCandidateStageSchema),
   moveCandidateStage
 );
@@ -145,7 +145,7 @@ router.post(
  */
 router.post(
   '/:id/rescore',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(rescoreCandidateSchema),
   rescoreCandidate
 );
@@ -157,7 +157,7 @@ router.post(
  */
 router.post(
   '/bulk/move-stage',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   validate(bulkMoveCandidatesSchema),
   bulkMoveCandidates
 );
@@ -169,7 +169,7 @@ router.post(
  */
 router.post(
   '/pipeline/add',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   addCandidatesToPipeline
 );
 
@@ -180,7 +180,7 @@ router.post(
  */
 router.get(
   '/pipeline/unassigned',
-  requireRole('recruiter', 'admin', 'super_admin', 'hiring_manager'),
+  requireRole('recruiter', 'admin', 'hiring_manager'),
   getCandidatesWithoutPipeline
 );
 

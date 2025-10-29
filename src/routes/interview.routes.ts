@@ -44,7 +44,7 @@ router.get('/:id', getInterviewById);
  */
 router.post(
   '/',
-  requireRole('recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   createInterview
 );
 
@@ -55,7 +55,7 @@ router.post(
  */
 router.put(
   '/:id',
-  requireRole('recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   updateInterview
 );
 
@@ -66,7 +66,7 @@ router.put(
  */
 router.patch(
   '/:id',
-  requireRole('recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   updateInterview
 );
 
@@ -77,7 +77,7 @@ router.patch(
  */
 router.post(
   '/:id/cancel',
-  requireRole('recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   cancelInterview
 );
 
@@ -88,7 +88,7 @@ router.post(
  */
 router.post(
   '/:id/feedback',
-  requireRole('interviewer', 'recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('interviewer', 'recruiter', 'hiring_manager', 'admin'),
   addFeedback
 );
 
@@ -99,7 +99,7 @@ router.post(
  */
 router.delete(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   deleteInterview
 );
 

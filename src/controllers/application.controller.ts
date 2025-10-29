@@ -538,6 +538,17 @@ export const approveApplication = asyncHandler(
       notes: notes || application.notes,
       source: 'application',
       createdBy: (req as any).user.id,
+      jobApplications: [{
+        jobId: jobId,
+        applicationId: application._id,
+        status: 'active',
+        appliedAt: application.createdAt || new Date(),
+        lastStatusChange: new Date(),
+        resumeScore: aiScore?.overallScore,
+        emailIds: [],
+        emailsSent: 0,
+        emailsReceived: 0,
+      }],
     };
 
     // Copy parsed resume data from application if it exists

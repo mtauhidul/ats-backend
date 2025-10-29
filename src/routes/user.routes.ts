@@ -28,7 +28,7 @@ router.get('/me', getCurrentUser);
  */
 router.get(
   '/stats',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   getUserStats
 );
 
@@ -39,7 +39,7 @@ router.get(
  */
 router.get(
   '/',
-  requireRole('admin', 'super_admin', 'recruiter'),
+  requireRole('admin', 'recruiter'),
   getUsers
 );
 
@@ -50,7 +50,7 @@ router.get(
  */
 router.get(
   '/:id',
-  requireRole('admin', 'super_admin', 'recruiter'),
+  requireRole('admin', 'recruiter'),
   getUserById
 );
 
@@ -61,7 +61,7 @@ router.get(
  */
 router.put(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   updateUser
 );
 
@@ -72,7 +72,7 @@ router.put(
  */
 router.patch(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   updateUser
 );
 
@@ -83,7 +83,7 @@ router.patch(
  */
 router.delete(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   deleteUser
 );
 

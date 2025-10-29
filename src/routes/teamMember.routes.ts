@@ -42,7 +42,7 @@ router.get('/:id', getTeamMemberById);
  */
 router.post(
   '/',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   createTeamMember
 );
 
@@ -53,7 +53,7 @@ router.post(
  */
 router.put(
   '/:id',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   updateTeamMember
 );
 
@@ -64,7 +64,7 @@ router.put(
  */
 router.patch(
   '/:id',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   updateTeamMember
 );
 
@@ -75,7 +75,7 @@ router.patch(
  */
 router.delete(
   '/:id',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   deleteTeamMember
 );
 

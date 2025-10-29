@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import { User } from '../models';
+import { User, Candidate, TeamMember } from '../models';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
-import { NotFoundError } from '../utils/errors';
+import { NotFoundError, BadRequestError } from '../utils/errors';
 import logger from '../utils/logger';
 
 /**
@@ -22,7 +22,11 @@ export const getUsers = asyncHandler(
     // Build filter
     const filter: any = {};
     if (role) filter.role = role;
-    if (isActive !== undefined) filter.isActive = isActive === 'true';
+    
+    // Filter by active status if provided
+    if (isActive !== undefined) {
+      filter.isActive = isActive === 'true';
+    }
 
     if (search) {
       filter.$or = [
@@ -129,25 +133,42 @@ export const updateUser = asyncHandler(
 );
 
 /**
- * Delete user (soft delete by setting isActive to false)
+ * Delete user (permanent delete with validation)
  */
 export const deleteUser = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const user = await User.findByIdAndUpdate(
-      id,
-      { isActive: false },
-      { new: true }
-    );
+    const user = await User.findById(id);
 
     if (!user) {
       throw new NotFoundError('User not found');
     }
 
-    logger.info(`User deactivated: ${user.email} by ${req.user?.email}`);
+    // Check if user has any active candidates assigned
+    const activeCandidatesCount = await Candidate.countDocuments({
+      assignedTo: id,
+      status: { $nin: ['rejected', 'withdrawn'] } // Not rejected or withdrawn
+    });
 
-    successResponse(res, user, 'User deactivated successfully');
+    if (activeCandidatesCount > 0) {
+      throw new BadRequestError(
+        `Cannot delete user. This user has ${activeCandidatesCount} active candidate(s) assigned. Please reassign or close these candidates first.`
+      );
+    }
+
+    // Count team member assignments before deletion for logging
+    const teamAssignmentsCount = await TeamMember.countDocuments({ userId: id });
+    
+    // Delete all team member assignments for this user
+    await TeamMember.deleteMany({ userId: id });
+
+    // Permanently delete the user
+    await User.findByIdAndDelete(id);
+
+    logger.info(`User permanently deleted: ${user.email} (removed ${teamAssignmentsCount} team assignment(s)) by ${req.user?.email}`);
+
+    successResponse(res, { id: user._id, deleted: true }, 'User deleted successfully');
   }
 );
 

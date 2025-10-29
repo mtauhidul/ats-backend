@@ -7,11 +7,11 @@ import { createTagSchema, updateTagSchema, tagIdSchema } from '../types/tag.type
 const router = express.Router();
 router.use(authenticate);
 
-router.post('/', requireRole('admin', 'super_admin'), validate(createTagSchema), createTag);
+router.post('/', requireRole('admin'), validate(createTagSchema), createTag);
 router.get('/', getTags);
 router.get('/:id', validate(tagIdSchema), getTagById);
-router.put('/:id', requireRole('admin', 'super_admin'), validate(updateTagSchema), updateTag);
-router.patch('/:id', requireRole('admin', 'super_admin'), validate(updateTagSchema), updateTag);
-router.delete('/:id', requireRole('admin', 'super_admin'), validate(tagIdSchema), deleteTag);
+router.put('/:id', requireRole('admin'), validate(updateTagSchema), updateTag);
+router.patch('/:id', requireRole('admin'), validate(updateTagSchema), updateTag);
+router.delete('/:id', requireRole('admin'), validate(tagIdSchema), deleteTag);
 
 export default router;

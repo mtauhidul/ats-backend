@@ -28,7 +28,7 @@ router.use(authenticate);
  */
 router.post(
   '/',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   validate(createClientSchema),
   createClient
 );
@@ -51,7 +51,7 @@ router.get(
  */
 router.get(
   '/stats',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   getClientStats
 );
 
@@ -73,7 +73,7 @@ router.get(
  */
 router.put(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   validate(updateClientSchema),
   updateClient
 );
@@ -85,7 +85,7 @@ router.put(
  */
 router.patch(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   validate(updateClientSchema),
   updateClient
 );
@@ -97,7 +97,7 @@ router.patch(
  */
 router.delete(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   validate(clientIdSchema),
   deleteClient
 );

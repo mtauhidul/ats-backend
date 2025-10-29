@@ -26,7 +26,7 @@ router.use(authenticate);
  */
 router.get(
   '/stats',
-  requireRole('recruiter', 'admin', 'super_admin'),
+  requireRole('recruiter', 'admin'),
   getEmailStats
 );
 
@@ -65,7 +65,7 @@ router.get('/:id', getEmailById);
  */
 router.post(
   '/',
-  requireRole('recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   sendEmail
 );
 
@@ -76,7 +76,7 @@ router.post(
  */
 router.post(
   '/draft',
-  requireRole('recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   createDraft
 );
 
@@ -87,7 +87,7 @@ router.post(
  */
 router.put(
   '/draft/:id',
-  requireRole('recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   updateDraft
 );
 
@@ -98,7 +98,7 @@ router.put(
  */
 router.patch(
   '/draft/:id',
-  requireRole('recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   updateDraft
 );
 
@@ -109,7 +109,7 @@ router.patch(
  */
 router.post(
   '/draft/:id/send',
-  requireRole('recruiter', 'hiring_manager', 'admin', 'super_admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   sendDraft
 );
 
@@ -120,7 +120,7 @@ router.post(
  */
 router.delete(
   '/:id',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   deleteEmail
 );
 
@@ -135,7 +135,7 @@ router.delete(
  */
 router.get(
   '/automation/status',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   (_req, res) => {
     try {
       const status = emailAutomationJob.getStatus();
@@ -160,7 +160,7 @@ router.get(
  */
 router.post(
   '/automation/start',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   (_req, res) => {
     try {
       emailAutomationJob.enable();
@@ -185,7 +185,7 @@ router.post(
  */
 router.post(
   '/automation/stop',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   (_req, res) => {
     try {
       emailAutomationJob.disable();
@@ -210,7 +210,7 @@ router.post(
  */
 router.post(
   '/automation/trigger',
-  requireRole('admin', 'super_admin'),
+  requireRole('admin'),
   async (_req, res) => {
     try {
       await emailAutomationJob.triggerManual();
