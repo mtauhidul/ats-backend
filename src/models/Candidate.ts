@@ -12,6 +12,7 @@ export interface ICandidate extends Document {
   // Professional Info
   currentTitle?: string;
   currentCompany?: string;
+  yearsOfExperience?: number;
   linkedinUrl?: string;
   portfolioUrl?: string;
   
@@ -124,6 +125,10 @@ const CandidateSchema = new Schema<ICandidate>(
     currentCompany: {
       type: String,
       trim: true,
+    },
+    yearsOfExperience: {
+      type: Number,
+      min: 0,
     },
     linkedinUrl: {
       type: String,
@@ -266,6 +271,8 @@ const CandidateSchema = new Schema<ICandidate>(
   },
   {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
@@ -285,6 +292,11 @@ CandidateSchema.index({
   skills: 'text',
   currentTitle: 'text',
   currentCompany: 'text'
+});
+
+// Virtual for id (for frontend compatibility)
+CandidateSchema.virtual('id').get(function (this: ICandidate) {
+  return (this._id as mongoose.Types.ObjectId).toString();
 });
 
 // Virtual for full name

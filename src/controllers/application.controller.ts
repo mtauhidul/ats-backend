@@ -392,8 +392,29 @@ export const approveApplication = asyncHandler(
       if (!pipeline) {
         throw new NotFoundError('Pipeline not found');
       }
+      logger.info(`Using provided pipeline: ${pipeline.name} (ID: ${pipeline._id})`);
     } else if (job.pipelineId) {
       pipeline = await Pipeline.findById(job.pipelineId);
+      logger.info(`Job has pipeline: ${pipeline ? pipeline.name : 'NOT FOUND'} (ID: ${job.pipelineId})`);
+    } else {
+      logger.info(`Job has NO pipeline assigned (job.pipelineId is null/undefined)`);
+    }
+
+    // Debug: Log pipeline details
+    if (pipeline) {
+      console.log('=== PIPELINE DEBUG ===');
+      console.log('Pipeline ID:', pipeline._id);
+      console.log('Pipeline Name:', pipeline.name);
+      console.log('Has stages:', !!pipeline.stages);
+      console.log('Stages count:', pipeline.stages?.length || 0);
+      if (pipeline.stages && pipeline.stages.length > 0) {
+        console.log('First stage:', JSON.stringify({
+          id: pipeline.stages[0]._id,
+          name: pipeline.stages[0].name,
+          order: pipeline.stages[0].order
+        }));
+      }
+      console.log('======================');
     }
 
     // Perform AI scoring
@@ -429,6 +450,78 @@ export const approveApplication = asyncHandler(
       educationSample: JSON.stringify(application.parsedData?.education?.[0]),
     });
 
+    // Helper function to calculate years of experience from experience array
+    const calculateYearsOfExperience = (experiences: any[]): number => {
+      if (!experiences || experiences.length === 0) return 0;
+      
+      let totalMonths = 0;
+      
+      for (const exp of experiences) {
+        if (!exp.duration) continue;
+        
+        // Parse duration like "Nov 2020 - Oct 2025" or "2020 - 2025" or "Nov 2020 - Present"
+        const durationStr = exp.duration.trim();
+        
+        // Handle "Present" or "Current"
+        const isPresentJob = /present|current/i.test(durationStr);
+        
+        // Try to extract dates
+        const dateMatch = durationStr.match(/(\w+\s+)?(\d{4})\s*[-–]\s*(\w+\s+)?(\d{4}|present|current)/i);
+        
+        if (dateMatch) {
+          const startYear = parseInt(dateMatch[2]);
+          const startMonth = dateMatch[1] ? new Date(dateMatch[1] + ' 1').getMonth() : 0;
+          
+          let endYear: number;
+          let endMonth: number;
+          
+          if (isPresentJob) {
+            const now = new Date();
+            endYear = now.getFullYear();
+            endMonth = now.getMonth();
+          } else {
+            endYear = parseInt(dateMatch[4]);
+            endMonth = dateMatch[3] ? new Date(dateMatch[3] + ' 1').getMonth() : 11;
+          }
+          
+          const months = (endYear - startYear) * 12 + (endMonth - startMonth);
+          totalMonths += Math.max(0, months);
+        }
+      }
+      
+      // Convert to years (rounded to 1 decimal)
+      return Math.round((totalMonths / 12) * 10) / 10;
+    };
+
+    // Helper function to filter certifications (remove skill descriptions)
+    const filterCertifications = (certifications: string[]): string[] => {
+      if (!certifications || certifications.length === 0) return [];
+      
+      return certifications.filter((cert: string) => {
+        // Remove items that are too long (likely skill descriptions, not cert names)
+        if (cert.length > 100) return false;
+        
+        // Remove items that contain phrases like "proficient in", "strong foundation", "experience with"
+        const skillPhrases = /proficient in|strong foundation|experience with|skilled in|expertise in|knowledge of/i;
+        if (skillPhrases.test(cert)) return false;
+        
+        return true;
+      });
+    };
+
+    // Get the first stage of the pipeline (if pipeline exists)
+    let firstStageId = null;
+    if (pipeline && pipeline.stages && pipeline.stages.length > 0) {
+      // Sort stages by order and get the first one
+      const sortedStages = pipeline.stages.sort((a: any, b: any) => a.order - b.order);
+      firstStageId = sortedStages[0]._id;
+      logger.info(`Assigning candidate to first stage: ${sortedStages[0].name} (ID: ${firstStageId})`);
+    } else if (pipeline) {
+      logger.warn(`Pipeline ${pipeline._id} has no stages defined`);
+    } else {
+      logger.info('No pipeline assigned - candidate will need to be added to pipeline manually');
+    }
+
     // Prepare candidate data
     const candidateData: any = {
       applicationId: application._id,
@@ -439,7 +532,7 @@ export const approveApplication = asyncHandler(
       phone: application.phone,
       resumeUrl: application.resumeUrl,
       resumeOriginalName: application.resumeOriginalName,
-      currentPipelineStageId: pipeline?._id,
+      currentPipelineStageId: firstStageId, // Assign to first stage, not pipeline ID
       status: 'active',
       aiScore,
       notes: notes || application.notes,
@@ -456,23 +549,63 @@ export const approveApplication = asyncHandler(
         candidateData.skills = [...application.parsedData.skills];
       }
       if (application.parsedData.experience && application.parsedData.experience.length > 0) {
-        candidateData.experience = application.parsedData.experience.map((exp: any) => ({
-          company: exp.company || '',
-          title: exp.title || '',
-          duration: exp.duration || '',
-          description: exp.description || '',
-        }));
+        // Map experience data and fix empty company names
+        candidateData.experience = application.parsedData.experience.map((exp: any) => {
+          let company = exp.company || '';
+          
+          // If company is empty, try to extract from description or title
+          if (!company && exp.description) {
+            const companyMatch = exp.description.match(/(?:at|@|for)\s+([A-Z][a-zA-Z\s&]+?)(?:\s*[-–]|\s*,|\s*$)/);
+            if (companyMatch) {
+              company = companyMatch[1].trim();
+            }
+          }
+          
+          return {
+            company,
+            title: exp.title || '',
+            duration: exp.duration || '',
+            description: exp.description || '',
+          };
+        });
+        
+        // Calculate years of experience from actual work history
+        const calculatedYears = calculateYearsOfExperience(candidateData.experience);
+        if (calculatedYears > 0) {
+          candidateData.yearsOfExperience = calculatedYears;
+        }
       }
       if (application.parsedData.education && application.parsedData.education.length > 0) {
-        candidateData.education = application.parsedData.education.map((edu: any) => ({
-          institution: edu.institution || '',
-          degree: edu.degree || '',
-          field: edu.field || '',
-          year: edu.year || '',
-        }));
+        candidateData.education = application.parsedData.education.map((edu: any) => {
+          // Ensure field contains actual field of study, not degree type
+          let field = edu.field || '';
+          
+          // If field is a degree type (bachelors, masters, etc.), try to find actual field
+          if (/^(bachelor|master|phd|doctorate|associate|diploma)/i.test(field) && edu.degree) {
+            // Try to extract field from degree
+            const fieldMatch = edu.degree.match(/in\s+([^,]+)/i);
+            if (fieldMatch) {
+              field = fieldMatch[1].trim();
+            } else if (edu.institution) {
+              // Check if institution name has field info
+              const instFieldMatch = edu.institution.match(/of\s+([^,]+)/i);
+              if (instFieldMatch) {
+                field = instFieldMatch[1].trim();
+              }
+            }
+          }
+          
+          return {
+            institution: edu.institution || '',
+            degree: edu.degree || '',
+            field,
+            year: edu.year || '',
+          };
+        });
       }
       if (application.parsedData.certifications && application.parsedData.certifications.length > 0) {
-        candidateData.certifications = [...application.parsedData.certifications];
+        // Filter out skill descriptions from certifications
+        candidateData.certifications = filterCertifications(application.parsedData.certifications);
       }
       if (application.parsedData.languages && application.parsedData.languages.length > 0) {
         candidateData.languages = [...application.parsedData.languages];
@@ -482,12 +615,16 @@ export const approveApplication = asyncHandler(
     // Create candidate
     const candidate = await Candidate.create(candidateData);
     
-    console.log('Candidate created:', {
-      candidateId: candidate._id,
-      skillsCount: candidate.skills?.length || 0,
-      experienceCount: candidate.experience?.length || 0,
-      educationCount: candidate.education?.length || 0,
-    });
+    console.log('=== CANDIDATE CREATED ===');
+    console.log('Candidate ID:', candidate._id);
+    console.log('Candidate Name:', `${candidate.firstName} ${candidate.lastName}`);
+    console.log('Job IDs:', candidate.jobIds);
+    console.log('Current Pipeline Stage ID:', candidate.currentPipelineStageId);
+    console.log('Status:', candidate.status);
+    console.log('Skills Count:', candidate.skills?.length || 0);
+    console.log('Experience Count:', candidate.experience?.length || 0);
+    console.log('Education Count:', candidate.education?.length || 0);
+    console.log('========================');
 
     // Update application status
     application.status = 'approved';

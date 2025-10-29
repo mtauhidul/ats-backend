@@ -12,6 +12,8 @@ import {
   bulkMoveCandidates,
   getCandidateStats,
   getTopCandidates,
+  addCandidatesToPipeline,
+  getCandidatesWithoutPipeline,
 } from '../controllers/candidate.controller';
 import {
   createCandidateSchema,
@@ -158,6 +160,28 @@ router.post(
   requireRole('recruiter', 'admin', 'super_admin'),
   validate(bulkMoveCandidatesSchema),
   bulkMoveCandidates
+);
+
+/**
+ * @route   POST /api/candidates/pipeline/add
+ * @desc    Add candidates to a pipeline (assign to first stage)
+ * @access  Recruiter, Admin, Super Admin
+ */
+router.post(
+  '/pipeline/add',
+  requireRole('recruiter', 'admin', 'super_admin'),
+  addCandidatesToPipeline
+);
+
+/**
+ * @route   GET /api/candidates/pipeline/unassigned
+ * @desc    Get candidates for a job that are not in any pipeline
+ * @access  Recruiter, Admin, Super Admin, Hiring Manager
+ */
+router.get(
+  '/pipeline/unassigned',
+  requireRole('recruiter', 'admin', 'super_admin', 'hiring_manager'),
+  getCandidatesWithoutPipeline
 );
 
 export default router;

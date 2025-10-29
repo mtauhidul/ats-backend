@@ -118,18 +118,65 @@ export const getCandidates = asyncHandler(
     const sort: any = {};
     sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
 
-    // Fetch data
+    // Fetch data with nested population
     const candidates = await Candidate.find(filter)
-      .populate('jobIds', 'title location employmentType')
+      .populate({
+        path: 'jobIds',
+        select: 'title location employmentType clientId',
+        populate: {
+          path: 'clientId',
+          select: 'companyName logo email industry'
+        }
+      })
       .populate('applicationId', 'source appliedAt')
+      .populate('assignedTo', 'firstName lastName email avatar')
       .sort(sort)
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean(); // Use lean() for better performance with plain objects
+
+    logger.info(`Found ${candidates.length} candidates`);
+
+    // Manually populate currentStage for each candidate
+    const { Pipeline } = await import('../models/Pipeline');
+    
+    const candidatesWithStage = await Promise.all(
+      candidates.map(async (candidate: any) => {
+        if (candidate.currentPipelineStageId) {
+          try {
+            const pipeline = await Pipeline.findOne({
+              'stages._id': candidate.currentPipelineStageId
+            });
+            
+            if (pipeline) {
+              const stageId = candidate.currentPipelineStageId.toString();
+              const stage = pipeline.stages.find(
+                (s: any) => s._id.toString() === stageId
+              );
+              
+              if (stage) {
+                candidate.currentStage = {
+                  id: stage._id.toString(),
+                  name: stage.name,
+                  color: stage.color,
+                  order: stage.order,
+                };
+                logger.info(`Populated stage "${stage.name}" for candidate ${candidate.firstName} ${candidate.lastName}`);
+              }
+            }
+          } catch (error) {
+            logger.error('Error populating stage for candidate:', error);
+          }
+        }
+        
+        return candidate;
+      })
+    );
 
     successResponse(
       res,
       {
-        candidates,
+        candidates: candidatesWithStage,
         pagination,
       },
       'Candidates retrieved successfully'
@@ -145,14 +192,51 @@ export const getCandidateById = asyncHandler(
     const { id } = req.params;
 
     const candidate = await Candidate.findById(id)
-      .populate('jobIds', 'title description location employmentType salaryRange requirements skills')
-      .populate('applicationId', 'source appliedAt resumeUrl parsedData');
+      .populate({
+        path: 'jobIds',
+        select: 'title description location employmentType salaryRange requirements skills clientId',
+        populate: {
+          path: 'clientId',
+          select: 'companyName logo email industry address'
+        }
+      })
+      .populate('applicationId', 'source appliedAt resumeUrl parsedData')
+      .populate('assignedTo', 'firstName lastName email avatar');
 
     if (!candidate) {
       throw new NotFoundError('Candidate not found');
     }
 
-    successResponse(res, candidate, 'Candidate retrieved successfully');
+    // Get the current pipeline stage name if available
+    let currentStage = null;
+    if (candidate.currentPipelineStageId) {
+      const Pipeline = (await import('../models/Pipeline')).Pipeline;
+      const pipeline = await Pipeline.findOne({
+        'stages._id': candidate.currentPipelineStageId
+      });
+      
+      if (pipeline) {
+        const stage = pipeline.stages.find(
+          (s: any) => s._id.toString() === candidate.currentPipelineStageId?.toString()
+        );
+        if (stage) {
+          currentStage = {
+            id: stage._id,
+            name: stage.name,
+            color: stage.color,
+            order: stage.order
+          };
+        }
+      }
+    }
+
+    // Add currentStage to response
+    const candidateData: any = candidate.toJSON();
+    if (currentStage) {
+      candidateData.currentStage = currentStage;
+    }
+
+    successResponse(res, candidateData, 'Candidate retrieved successfully');
   }
 );
 
@@ -192,6 +276,7 @@ export const updateCandidate = asyncHandler(
     await candidate.populate([
       { path: 'jobIds', select: 'title location employmentType' },
       { path: 'applicationId', select: 'source appliedAt' },
+      { path: 'assignedTo', select: 'firstName lastName email avatar' },
     ]);
 
     logger.info(`Candidate updated: ${candidate.email}`);
@@ -354,6 +439,116 @@ export const bulkMoveCandidates = asyncHandler(
         newStage,
       },
       `Successfully moved ${result.modifiedCount} candidates`
+    );
+  }
+);
+
+/**
+ * Add candidates to a pipeline (assign to first stage)
+ * Used when adding candidates from pipeline page
+ */
+export const addCandidatesToPipeline = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const { candidateIds, pipelineId, jobId } = req.body;
+
+    // Validate inputs
+    if (!candidateIds || !Array.isArray(candidateIds) || candidateIds.length === 0) {
+      throw new CustomValidationError('candidateIds must be a non-empty array');
+    }
+
+    if (!pipelineId) {
+      throw new CustomValidationError('pipelineId is required');
+    }
+
+    // Validate all candidate IDs
+    const validIds = candidateIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (validIds.length !== candidateIds.length) {
+      throw new CustomValidationError('Some candidate IDs are invalid');
+    }
+
+    // Get the pipeline and its first stage
+    const Pipeline = (await import('../models/Pipeline')).Pipeline;
+    const pipeline = await Pipeline.findById(pipelineId);
+
+    if (!pipeline) {
+      throw new NotFoundError('Pipeline not found');
+    }
+
+    if (!pipeline.stages || pipeline.stages.length === 0) {
+      throw new CustomValidationError('Pipeline has no stages defined');
+    }
+
+    // Get the first stage (sorted by order)
+    const sortedStages = pipeline.stages.sort((a: any, b: any) => a.order - b.order);
+    const firstStage = sortedStages[0];
+
+    logger.info(`Adding ${validIds.length} candidates to pipeline ${pipeline.name}, first stage: ${firstStage.name}`);
+
+    // If jobId is provided, verify candidates belong to this job
+    if (jobId) {
+      const candidatesToUpdate = await Candidate.find({
+        _id: { $in: validIds },
+        jobIds: jobId
+      });
+
+      if (candidatesToUpdate.length !== validIds.length) {
+        throw new CustomValidationError('Some candidates do not belong to the specified job');
+      }
+    }
+
+    // Update candidates - assign to first stage
+    const result = await Candidate.updateMany(
+      { _id: { $in: validIds } },
+      { 
+        currentPipelineStageId: firstStage._id,
+        updatedBy: (req as any).user?.id
+      }
+    );
+
+    logger.info(`Successfully added ${result.modifiedCount} candidates to pipeline ${pipeline.name}`);
+
+    successResponse(
+      res,
+      {
+        modifiedCount: result.modifiedCount,
+        pipelineId,
+        stageName: firstStage.name,
+        stageId: firstStage._id
+      },
+      `Successfully added ${result.modifiedCount} candidates to pipeline`
+    );
+  }
+);
+
+/**
+ * Get candidates for a job that are not in any pipeline
+ * Used for the "Add to Pipeline" modal
+ */
+export const getCandidatesWithoutPipeline = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const { jobId } = req.query;
+
+    if (!jobId) {
+      throw new CustomValidationError('jobId is required');
+    }
+
+    // Find candidates for this job that have no pipeline stage assigned
+    const candidates = await Candidate.find({
+      jobIds: jobId,
+      $or: [
+        { currentPipelineStageId: null },
+        { currentPipelineStageId: { $exists: false } }
+      ]
+    })
+    .select('firstName lastName email phone avatar skills aiScore status createdAt')
+    .sort({ createdAt: -1 });
+
+    logger.info(`Found ${candidates.length} candidates without pipeline for job ${jobId}`);
+
+    successResponse(
+      res,
+      candidates,
+      `Found ${candidates.length} candidates without pipeline assignment`
     );
   }
 );

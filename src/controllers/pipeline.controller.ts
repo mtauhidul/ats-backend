@@ -162,7 +162,50 @@ export const updatePipeline = asyncHandler(
       await Pipeline.updateMany({ _id: { $ne: id } }, { isDefault: false });
     }
 
-    // Update fields
+    // Handle stages update specially to preserve existing stage IDs
+    if (updates.stages && Array.isArray(updates.stages)) {
+      const existingStages = pipeline.stages;
+      const updatedStages = updates.stages.map((newStage: any, index: number) => {
+        // If the stage has an _id, try to find and update the existing stage
+        if (newStage._id) {
+          const existingStage = existingStages.find((s: any) => 
+            s._id.toString() === newStage._id.toString()
+          );
+          if (existingStage) {
+            // Preserve the existing _id and update other fields
+            return {
+              _id: existingStage._id,
+              name: newStage.name,
+              description: newStage.description,
+              order: newStage.order !== undefined ? newStage.order : index,
+              color: newStage.color,
+              isActive: newStage.isActive !== undefined ? newStage.isActive : true,
+            };
+          }
+        }
+        // For stages without _id or not found, check if we can match by order/index
+        const existingStageByOrder = existingStages[index];
+        if (existingStageByOrder) {
+          // Preserve existing stage ID when updating by position
+          return {
+            _id: existingStageByOrder._id,
+            name: newStage.name,
+            description: newStage.description,
+            order: newStage.order !== undefined ? newStage.order : index,
+            color: newStage.color,
+            isActive: newStage.isActive !== undefined ? newStage.isActive : true,
+          };
+        }
+        // New stage without matching existing one
+        return newStage;
+      });
+      
+      // Remove stages from updates and update manually
+      delete updates.stages;
+      pipeline.stages = updatedStages as any;
+    }
+
+    // Update other fields
     Object.assign(pipeline, updates);
     pipeline.updatedBy = req.user?._id as any;
     await pipeline.save();
