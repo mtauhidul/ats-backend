@@ -1,30 +1,30 @@
-import mongoose, { Document, Schema } from 'mongoose';
-import { encrypt, decrypt } from '../utils/crypto';
+import mongoose, { Document, Schema } from "mongoose";
+import { decrypt, encrypt } from "../utils/crypto";
 
 export interface IEmailAccount extends Document {
   name: string;
   email: string;
-  provider: 'gmail' | 'outlook' | 'custom';
-  
+  provider: "gmail" | "outlook" | "custom";
+
   // IMAP Settings
   imapHost: string;
   imapPort: number;
   imapUser: string;
   imapPassword: string; // Encrypted
   imapTls: boolean;
-  
+
   // Automation Settings
   isActive: boolean;
   autoProcessResumes: boolean;
   defaultApplicationStatus: string;
   lastChecked?: Date;
-  
+
   // Metadata
   createdBy: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
-  
+
   // Methods
   getDecryptedPassword(): string;
   setEncryptedPassword(password: string): void;
@@ -46,10 +46,10 @@ const EmailAccountSchema = new Schema<IEmailAccount>(
     },
     provider: {
       type: String,
-      enum: ['gmail', 'outlook', 'custom'],
+      enum: ["gmail", "outlook", "custom"],
       required: true,
     },
-    
+
     // IMAP Settings
     imapHost: {
       type: String,
@@ -73,7 +73,7 @@ const EmailAccountSchema = new Schema<IEmailAccount>(
       type: Boolean,
       default: true,
     },
-    
+
     // Automation Settings
     isActive: {
       type: Boolean,
@@ -86,21 +86,21 @@ const EmailAccountSchema = new Schema<IEmailAccount>(
     },
     defaultApplicationStatus: {
       type: String,
-      default: 'pending',
+      default: "pending",
     },
     lastChecked: {
       type: Date,
     },
-    
+
     // Metadata
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   {
@@ -118,14 +118,16 @@ EmailAccountSchema.methods.getDecryptedPassword = function (): string {
   return decrypt(this.imapPassword);
 };
 
-EmailAccountSchema.methods.setEncryptedPassword = function (password: string): void {
+EmailAccountSchema.methods.setEncryptedPassword = function (
+  password: string
+): void {
   this.imapPassword = encrypt(password);
 };
 
 // Pre-save hook to encrypt password
-EmailAccountSchema.pre('save', function (next) {
+EmailAccountSchema.pre("save", function (next) {
   // Only encrypt if password is modified and not already encrypted
-  if (this.isModified('imapPassword')) {
+  if (this.isModified("imapPassword")) {
     // Check if it's already encrypted (encrypted strings are hex)
     const isEncrypted = /^[0-9a-f]+$/i.test(this.imapPassword);
     if (!isEncrypted) {
@@ -146,7 +148,7 @@ EmailAccountSchema.methods.toJSON = function () {
     imapHost: account.imapHost,
     imapPort: account.imapPort,
     imapUser: account.imapUser,
-    imapPassword: '********', // Masked
+    imapPassword: "********", // Masked
     imapTls: account.imapTls,
     isActive: account.isActive,
     autoProcessResumes: account.autoProcessResumes,
@@ -158,4 +160,7 @@ EmailAccountSchema.methods.toJSON = function () {
   };
 };
 
-export const EmailAccount = mongoose.model<IEmailAccount>('EmailAccount', EmailAccountSchema);
+export const EmailAccount = mongoose.model<IEmailAccount>(
+  "EmailAccount",
+  EmailAccountSchema
+);

@@ -17,7 +17,7 @@ export interface TokenPayload {
  * Hash password using bcrypt
  */
 export const hashPassword = async (password: string): Promise<string> => {
-  const salt = await bcrypt.genSalt(12);
+  const salt = await bcrypt.genSalt(10); // 10 rounds = ~100ms, good balance
   return bcrypt.hash(password, salt);
 };
 

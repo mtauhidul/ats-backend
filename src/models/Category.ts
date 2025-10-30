@@ -1,11 +1,11 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface ICategory extends Document {
   name: string;
   description?: string;
   color?: string;
   icon?: string;
-  type: 'job' | 'candidate' | 'general';
+  type: "job" | "candidate" | "general";
   isActive: boolean;
   createdBy: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
@@ -27,15 +27,15 @@ const CategorySchema = new Schema<ICategory>(
     },
     color: {
       type: String,
-      default: '#3B82F6',
+      default: "#3B82F6",
     },
     icon: {
       type: String,
     },
     type: {
       type: String,
-      enum: ['job', 'candidate', 'general'],
-      default: 'general',
+      enum: ["job", "candidate", "general"],
+      default: "general",
       index: true,
     },
     isActive: {
@@ -45,12 +45,12 @@ const CategorySchema = new Schema<ICategory>(
     },
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   {
@@ -62,4 +62,4 @@ const CategorySchema = new Schema<ICategory>(
 // Note: name already has unique index from unique: true
 CategorySchema.index({ type: 1, isActive: 1 });
 
-export const Category = mongoose.model<ICategory>('Category', CategorySchema);
+export const Category = mongoose.model<ICategory>("Category", CategorySchema);

@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface ICandidate extends Document {
   // Personal Info
@@ -8,14 +8,14 @@ export interface ICandidate extends Document {
   phone?: string;
   location?: string;
   avatar?: string;
-  
+
   // Professional Info
   currentTitle?: string;
   currentCompany?: string;
   yearsOfExperience?: number;
   linkedinUrl?: string;
   portfolioUrl?: string;
-  
+
   // Resume & Documents
   resumeUrl: string;
   resumeOriginalName: string;
@@ -24,7 +24,7 @@ export interface ICandidate extends Document {
     originalName: string;
     type: string;
   }>;
-  
+
   // Parsed Resume Data (from AI)
   summary?: string;
   skills?: string[];
@@ -42,7 +42,7 @@ export interface ICandidate extends Document {
   }>;
   certifications?: string[];
   languages?: string[];
-  
+
   // AI Scoring (when converted from application)
   aiScore?: {
     overallScore: number; // 0-100
@@ -52,20 +52,26 @@ export interface ICandidate extends Document {
     summary: string;
     strengths: string[];
     concerns: string[];
-    recommendation: 'strong_fit' | 'good_fit' | 'moderate_fit' | 'poor_fit';
+    recommendation: "strong_fit" | "good_fit" | "moderate_fit" | "poor_fit";
     scoredForJobId: mongoose.Types.ObjectId;
     scoredAt: Date;
   };
-  
+
   // Application History
   applicationId: mongoose.Types.ObjectId; // Original application
   jobIds: mongoose.Types.ObjectId[]; // Jobs applied to
-  
+
   // Job Applications - Per-job tracking
   jobApplications: Array<{
     jobId: mongoose.Types.ObjectId;
     applicationId?: mongoose.Types.ObjectId;
-    status: 'active' | 'interviewing' | 'offered' | 'hired' | 'rejected' | 'withdrawn';
+    status:
+      | "active"
+      | "interviewing"
+      | "offered"
+      | "hired"
+      | "rejected"
+      | "withdrawn";
     appliedAt: Date;
     lastStatusChange: Date;
     currentStage?: string;
@@ -81,24 +87,30 @@ export interface ICandidate extends Document {
     emailsReceived: number;
     lastEmailSubject?: string;
   }>;
-  
+
   // Status & Pipeline (for current/primary job application)
-  status: 'active' | 'interviewing' | 'offered' | 'hired' | 'rejected' | 'withdrawn';
+  status:
+    | "active"
+    | "interviewing"
+    | "offered"
+    | "hired"
+    | "rejected"
+    | "withdrawn";
   currentPipelineStageId?: mongoose.Types.ObjectId;
-  
+
   // Tags & Categories
   tagIds: mongoose.Types.ObjectId[];
   categoryIds: mongoose.Types.ObjectId[];
-  
+
   // Notes
   notes?: string;
   internalNotes?: string;
-  
+
   // Assignment
   assignedTo?: mongoose.Types.ObjectId;
-  
+
   // Metadata
-  source: 'application' | 'manual_import' | 'referral';
+  source: "application" | "manual_import" | "referral";
   createdBy: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -136,7 +148,7 @@ const CandidateSchema = new Schema<ICandidate>(
     avatar: {
       type: String,
     },
-    
+
     // Professional Info
     currentTitle: {
       type: String,
@@ -158,7 +170,7 @@ const CandidateSchema = new Schema<ICandidate>(
       type: String,
       trim: true,
     },
-    
+
     // Resume & Documents
     resumeUrl: {
       type: String,
@@ -168,30 +180,36 @@ const CandidateSchema = new Schema<ICandidate>(
       type: String,
       required: true,
     },
-    additionalDocuments: [{
-      url: String,
-      originalName: String,
-      type: String,
-    }],
-    
+    additionalDocuments: [
+      {
+        url: String,
+        originalName: String,
+        type: String,
+      },
+    ],
+
     // Parsed Resume Data
     summary: String,
     skills: [String],
-    experience: [{
-      company: String,
-      title: String,
-      duration: String,
-      description: String,
-    }],
-    education: [{
-      institution: String,
-      degree: String,
-      field: String,
-      year: String,
-    }],
+    experience: [
+      {
+        company: String,
+        title: String,
+        duration: String,
+        description: String,
+      },
+    ],
+    education: [
+      {
+        institution: String,
+        degree: String,
+        field: String,
+        year: String,
+      },
+    ],
     certifications: [String],
     languages: [String],
-    
+
     // AI Scoring
     aiScore: {
       overallScore: {
@@ -219,126 +237,150 @@ const CandidateSchema = new Schema<ICandidate>(
       concerns: [String],
       recommendation: {
         type: String,
-        enum: ['strong_fit', 'good_fit', 'moderate_fit', 'poor_fit'],
+        enum: ["strong_fit", "good_fit", "moderate_fit", "poor_fit"],
       },
       scoredForJobId: {
         type: Schema.Types.ObjectId,
-        ref: 'Job',
+        ref: "Job",
       },
       scoredAt: Date,
     },
-    
+
     // Application History
     applicationId: {
       type: Schema.Types.ObjectId,
-      ref: 'Application',
+      ref: "Application",
       required: true,
       index: true,
     },
-    jobIds: [{
-      type: Schema.Types.ObjectId,
-      ref: 'Job',
-    }],
-    
+    jobIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Job",
+      },
+    ],
+
     // Job Applications - Per-job tracking
-    jobApplications: [{
-      jobId: {
-        type: Schema.Types.ObjectId,
-        ref: 'Job',
-        required: true,
+    jobApplications: [
+      {
+        jobId: {
+          type: Schema.Types.ObjectId,
+          ref: "Job",
+          required: true,
+        },
+        applicationId: {
+          type: Schema.Types.ObjectId,
+          ref: "Application",
+        },
+        status: {
+          type: String,
+          enum: [
+            "active",
+            "interviewing",
+            "offered",
+            "hired",
+            "rejected",
+            "withdrawn",
+          ],
+          default: "active",
+        },
+        appliedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        lastStatusChange: {
+          type: Date,
+          default: Date.now,
+        },
+        currentStage: String,
+        notes: String,
+        rating: {
+          type: Number,
+          min: 1,
+          max: 5,
+        },
+        resumeScore: {
+          type: Number,
+          min: 0,
+          max: 100,
+        },
+        interviewScheduled: Date,
+        rejectionReason: String,
+        withdrawalReason: String,
+        emailIds: [
+          {
+            type: Schema.Types.ObjectId,
+            ref: "Email",
+          },
+        ],
+        lastEmailDate: Date,
+        emailsSent: {
+          type: Number,
+          default: 0,
+        },
+        emailsReceived: {
+          type: Number,
+          default: 0,
+        },
+        lastEmailSubject: String,
       },
-      applicationId: {
-        type: Schema.Types.ObjectId,
-        ref: 'Application',
-      },
-      status: {
-        type: String,
-        enum: ['active', 'interviewing', 'offered', 'hired', 'rejected', 'withdrawn'],
-        default: 'active',
-      },
-      appliedAt: {
-        type: Date,
-        default: Date.now,
-      },
-      lastStatusChange: {
-        type: Date,
-        default: Date.now,
-      },
-      currentStage: String,
-      notes: String,
-      rating: {
-        type: Number,
-        min: 1,
-        max: 5,
-      },
-      resumeScore: {
-        type: Number,
-        min: 0,
-        max: 100,
-      },
-      interviewScheduled: Date,
-      rejectionReason: String,
-      withdrawalReason: String,
-      emailIds: [{
-        type: Schema.Types.ObjectId,
-        ref: 'Email',
-      }],
-      lastEmailDate: Date,
-      emailsSent: {
-        type: Number,
-        default: 0,
-      },
-      emailsReceived: {
-        type: Number,
-        default: 0,
-      },
-      lastEmailSubject: String,
-    }],
-    
+    ],
+
     // Status & Pipeline (for current/primary job application)
     status: {
       type: String,
-      enum: ['active', 'interviewing', 'offered', 'hired', 'rejected', 'withdrawn'],
-      default: 'active',
+      enum: [
+        "active",
+        "interviewing",
+        "offered",
+        "hired",
+        "rejected",
+        "withdrawn",
+      ],
+      default: "active",
     },
     currentPipelineStageId: {
       type: Schema.Types.ObjectId,
-      ref: 'Pipeline.stages',
-    },    // Tags & Categories
-    tagIds: [{
-      type: Schema.Types.ObjectId,
-      ref: 'Tag',
-    }],
-    categoryIds: [{
-      type: Schema.Types.ObjectId,
-      ref: 'Category',
-    }],
-    
+      ref: "Pipeline.stages",
+    }, // Tags & Categories
+    tagIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Tag",
+      },
+    ],
+    categoryIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Category",
+      },
+    ],
+
     // Notes
     notes: String,
     internalNotes: String,
-    
+
     // Assignment
     assignedTo: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       index: true,
     },
-    
+
     // Metadata
     source: {
       type: String,
-      enum: ['application', 'manual_import', 'referral'],
-      default: 'application',
+      enum: ["application", "manual_import", "referral"],
+      default: "application",
     },
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   {
@@ -352,28 +394,32 @@ const CandidateSchema = new Schema<ICandidate>(
 // Note: email already has unique index from unique: true
 CandidateSchema.index({ status: 1 });
 CandidateSchema.index({ assignedTo: 1, status: 1 });
-CandidateSchema.index({ 'aiScore.overallScore': -1 });
+CandidateSchema.index({ "aiScore.overallScore": -1 });
 CandidateSchema.index({ jobIds: 1 });
 CandidateSchema.index({ createdAt: -1 });
+CandidateSchema.index({ createdAt: -1, source: 1 }); // Compound index for analytics
 
 // Full text search
-CandidateSchema.index({ 
-  firstName: 'text', 
-  lastName: 'text', 
-  email: 'text', 
-  skills: 'text',
-  currentTitle: 'text',
-  currentCompany: 'text'
+CandidateSchema.index({
+  firstName: "text",
+  lastName: "text",
+  email: "text",
+  skills: "text",
+  currentTitle: "text",
+  currentCompany: "text",
 });
 
 // Virtual for id (for frontend compatibility)
-CandidateSchema.virtual('id').get(function (this: ICandidate) {
+CandidateSchema.virtual("id").get(function (this: ICandidate) {
   return (this._id as mongoose.Types.ObjectId).toString();
 });
 
 // Virtual for full name
-CandidateSchema.virtual('fullName').get(function (this: ICandidate) {
+CandidateSchema.virtual("fullName").get(function (this: ICandidate) {
   return `${this.firstName} ${this.lastName}`;
 });
 
-export const Candidate = mongoose.model<ICandidate>('Candidate', CandidateSchema);
+export const Candidate = mongoose.model<ICandidate>(
+  "Candidate",
+  CandidateSchema
+);

@@ -1,7 +1,7 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface IEmail extends Document {
-  direction: 'inbound' | 'outbound';
+  direction: "inbound" | "outbound";
   from: string;
   to: string[];
   cc?: string[];
@@ -9,7 +9,7 @@ export interface IEmail extends Document {
   subject: string;
   body: string;
   bodyHtml?: string;
-  
+
   // Attachments
   attachments?: Array<{
     filename: string;
@@ -17,9 +17,17 @@ export interface IEmail extends Document {
     contentType: string;
     size: number;
   }>;
-  
+
   // Status
-  status: 'sent' | 'delivered' | 'delayed' | 'bounced' | 'complained' | 'failed' | 'received' | 'draft';
+  status:
+    | "sent"
+    | "delivered"
+    | "delayed"
+    | "bounced"
+    | "complained"
+    | "failed"
+    | "received"
+    | "draft";
   sentAt?: Date;
   receivedAt?: Date;
   deliveredAt?: Date;
@@ -28,29 +36,29 @@ export interface IEmail extends Document {
   clickedAt?: Date;
   openCount?: number;
   clickCount?: number;
-  
+
   // Resend integration
   resendId?: string; // Resend email ID for tracking
-  
+
   // Relationships
   candidateId?: mongoose.Types.ObjectId;
   applicationId?: mongoose.Types.ObjectId;
   jobId?: mongoose.Types.ObjectId;
   clientId?: mongoose.Types.ObjectId;
   interviewId?: mongoose.Types.ObjectId;
-  
+
   // Email Account (for inbound)
   emailAccountId?: mongoose.Types.ObjectId;
-  
+
   // Metadata
   messageId?: string; // Email message ID
   inReplyTo?: string; // Reply thread
   threadId?: string;
-  
+
   // Error tracking
   error?: string;
   retryCount?: number;
-  
+
   // Sender/Creator
   sentBy?: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -61,7 +69,7 @@ const EmailSchema = new Schema<IEmail>(
   {
     direction: {
       type: String,
-      enum: ['inbound', 'outbound'],
+      enum: ["inbound", "outbound"],
       required: true,
       index: true,
     },
@@ -71,21 +79,27 @@ const EmailSchema = new Schema<IEmail>(
       lowercase: true,
       trim: true,
     },
-    to: [{
-      type: String,
-      lowercase: true,
-      trim: true,
-    }],
-    cc: [{
-      type: String,
-      lowercase: true,
-      trim: true,
-    }],
-    bcc: [{
-      type: String,
-      lowercase: true,
-      trim: true,
-    }],
+    to: [
+      {
+        type: String,
+        lowercase: true,
+        trim: true,
+      },
+    ],
+    cc: [
+      {
+        type: String,
+        lowercase: true,
+        trim: true,
+      },
+    ],
+    bcc: [
+      {
+        type: String,
+        lowercase: true,
+        trim: true,
+      },
+    ],
     subject: {
       type: String,
       required: true,
@@ -98,20 +112,31 @@ const EmailSchema = new Schema<IEmail>(
     bodyHtml: {
       type: String,
     },
-    
+
     // Attachments
-    attachments: [{
-      filename: String,
-      url: String,
-      contentType: String,
-      size: Number,
-    }],
-    
+    attachments: [
+      {
+        filename: String,
+        url: String,
+        contentType: String,
+        size: Number,
+      },
+    ],
+
     // Status
     status: {
       type: String,
-      enum: ['sent', 'delivered', 'delayed', 'bounced', 'complained', 'failed', 'received', 'draft'],
-      default: 'draft',
+      enum: [
+        "sent",
+        "delivered",
+        "delayed",
+        "bounced",
+        "complained",
+        "failed",
+        "received",
+        "draft",
+      ],
+      default: "draft",
       index: true,
     },
     sentAt: {
@@ -144,7 +169,7 @@ const EmailSchema = new Schema<IEmail>(
       type: Number,
       default: 0,
     },
-    
+
     // Resend integration
     resendId: {
       type: String,
@@ -152,41 +177,41 @@ const EmailSchema = new Schema<IEmail>(
       unique: true,
       sparse: true, // Allow null values
     },
-    
+
     // Relationships
     candidateId: {
       type: Schema.Types.ObjectId,
-      ref: 'Candidate',
+      ref: "Candidate",
       index: true,
     },
     applicationId: {
       type: Schema.Types.ObjectId,
-      ref: 'Application',
+      ref: "Application",
       index: true,
     },
     jobId: {
       type: Schema.Types.ObjectId,
-      ref: 'Job',
+      ref: "Job",
       index: true,
     },
     clientId: {
       type: Schema.Types.ObjectId,
-      ref: 'Client',
+      ref: "Client",
       index: true,
     },
     interviewId: {
       type: Schema.Types.ObjectId,
-      ref: 'Interview',
+      ref: "Interview",
       index: true,
     },
-    
+
     // Email Account
     emailAccountId: {
       type: Schema.Types.ObjectId,
-      ref: 'EmailAccount',
+      ref: "EmailAccount",
       index: true,
     },
-    
+
     // Metadata
     messageId: {
       type: String,
@@ -196,18 +221,18 @@ const EmailSchema = new Schema<IEmail>(
     threadId: {
       type: String,
     },
-    
+
     // Error tracking
     error: String,
     retryCount: {
       type: Number,
       default: 0,
     },
-    
+
     // Sender
     sentBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       index: true,
     },
   },
@@ -224,4 +249,4 @@ EmailSchema.index({ jobId: 1, createdAt: -1 });
 EmailSchema.index({ threadId: 1 });
 EmailSchema.index({ sentAt: -1 });
 
-export const Email = mongoose.model<IEmail>('Email', EmailSchema);
+export const Email = mongoose.model<IEmail>("Email", EmailSchema);

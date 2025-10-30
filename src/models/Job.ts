@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface IJob extends Document {
   title: string;
@@ -7,9 +7,9 @@ export interface IJob extends Document {
   requirements: string[];
   responsibilities: string[];
   location: string;
-  locationType: 'onsite' | 'hybrid' | 'remote';
-  jobType: 'full_time' | 'part_time' | 'contract' | 'internship';
-  experienceLevel: 'entry' | 'mid' | 'senior' | 'lead' | 'executive';
+  locationType: "onsite" | "hybrid" | "remote";
+  jobType: "full_time" | "part_time" | "contract" | "internship";
+  experienceLevel: "entry" | "mid" | "senior" | "lead" | "executive";
   salaryRange?: {
     min: number;
     max: number;
@@ -20,11 +20,11 @@ export interface IJob extends Document {
   pipelineId?: mongoose.Types.ObjectId;
   categoryIds: mongoose.Types.ObjectId[];
   tagIds: mongoose.Types.ObjectId[];
-  status: 'draft' | 'open' | 'closed' | 'on_hold';
+  status: "draft" | "open" | "closed" | "on_hold";
   openings: number;
   applicationDeadline?: Date;
   startDate?: Date;
-  priority: 'low' | 'medium' | 'high' | 'urgent';
+  priority: "low" | "medium" | "high" | "urgent";
   hiringManagerId?: mongoose.Types.ObjectId;
   recruiterIds: mongoose.Types.ObjectId[];
   createdBy: mongoose.Types.ObjectId;
@@ -43,7 +43,7 @@ const JobSchema = new Schema<IJob>(
     },
     clientId: {
       type: Schema.Types.ObjectId,
-      ref: 'Client',
+      ref: "Client",
       required: true,
       index: true,
     },
@@ -51,12 +51,16 @@ const JobSchema = new Schema<IJob>(
       type: String,
       required: true,
     },
-    requirements: [{
-      type: String,
-    }],
-    responsibilities: [{
-      type: String,
-    }],
+    requirements: [
+      {
+        type: String,
+      },
+    ],
+    responsibilities: [
+      {
+        type: String,
+      },
+    ],
     location: {
       type: String,
       required: true,
@@ -64,19 +68,19 @@ const JobSchema = new Schema<IJob>(
     },
     locationType: {
       type: String,
-      enum: ['onsite', 'hybrid', 'remote'],
+      enum: ["onsite", "hybrid", "remote"],
       required: true,
       index: true,
     },
     jobType: {
       type: String,
-      enum: ['full_time', 'part_time', 'contract', 'internship'],
+      enum: ["full_time", "part_time", "contract", "internship"],
       required: true,
       index: true,
     },
     experienceLevel: {
       type: String,
-      enum: ['entry', 'mid', 'senior', 'lead', 'executive'],
+      enum: ["entry", "mid", "senior", "lead", "executive"],
       required: true,
       index: true,
     },
@@ -85,33 +89,41 @@ const JobSchema = new Schema<IJob>(
       max: Number,
       currency: {
         type: String,
-        default: 'USD',
+        default: "USD",
       },
     },
-    skills: [{
-      type: String,
-      trim: true,
-    }],
-    benefits: [{
-      type: String,
-    }],
+    skills: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+    benefits: [
+      {
+        type: String,
+      },
+    ],
     pipelineId: {
       type: Schema.Types.ObjectId,
-      ref: 'Pipeline',
+      ref: "Pipeline",
       index: true,
     },
-    categoryIds: [{
-      type: Schema.Types.ObjectId,
-      ref: 'Category',
-    }],
-    tagIds: [{
-      type: Schema.Types.ObjectId,
-      ref: 'Tag',
-    }],
+    categoryIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Category",
+      },
+    ],
+    tagIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Tag",
+      },
+    ],
     status: {
       type: String,
-      enum: ['draft', 'open', 'closed', 'on_hold'],
-      default: 'draft',
+      enum: ["draft", "open", "closed", "on_hold"],
+      default: "draft",
     },
     openings: {
       type: Number,
@@ -127,26 +139,28 @@ const JobSchema = new Schema<IJob>(
     },
     priority: {
       type: String,
-      enum: ['low', 'medium', 'high', 'urgent'],
-      default: 'medium',
+      enum: ["low", "medium", "high", "urgent"],
+      default: "medium",
       index: true,
     },
     hiringManagerId: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
-    recruiterIds: [{
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-    }],
+    recruiterIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   {
@@ -171,10 +185,10 @@ const JobSchema = new Schema<IJob>(
 );
 
 // Indexes
-JobSchema.index({ title: 'text', description: 'text' });
+JobSchema.index({ title: "text", description: "text" });
 JobSchema.index({ clientId: 1, status: 1 });
 JobSchema.index({ status: 1, priority: 1 });
 JobSchema.index({ createdAt: -1 });
 JobSchema.index({ applicationDeadline: 1 });
 
-export const Job = mongoose.model<IJob>('Job', JobSchema);
+export const Job = mongoose.model<IJob>("Job", JobSchema);

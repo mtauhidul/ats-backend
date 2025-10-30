@@ -1,15 +1,15 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface IApplication extends Document {
   jobId?: mongoose.Types.ObjectId; // Optional - may be provided from email
   clientId?: mongoose.Types.ObjectId; // Optional - fetched from job when approved
-  
+
   // Candidate Info
   firstName: string;
   lastName: string;
   email: string;
   phone?: string;
-  
+
   // Resume & Documents
   resumeUrl: string;
   resumeOriginalName: string;
@@ -21,7 +21,7 @@ export interface IApplication extends Document {
     originalName: string;
     type: string;
   }>;
-  
+
   // Parsed Resume Data (from AI)
   parsedData?: {
     summary?: string;
@@ -41,36 +41,36 @@ export interface IApplication extends Document {
     certifications?: string[];
     languages?: string[];
   };
-  
+
   // AI Resume Validation
   isValidResume?: boolean; // AI's determination if this is a legitimate resume
   validationScore?: number; // 0-100 score of resume legitimacy
   validationReason?: string; // Explanation of why resume is valid/invalid
-  
+
   // Application Details
-  status: 'pending' | 'reviewing' | 'shortlisted' | 'rejected' | 'approved';
-  source: 'manual' | 'direct_apply' | 'email_automation';
+  status: "pending" | "reviewing" | "shortlisted" | "rejected" | "approved";
+  source: "manual" | "direct_apply" | "email_automation";
   sourceEmail?: string; // If from email automation
   sourceEmailAccountId?: mongoose.Types.ObjectId;
-  
+
   // Pipeline
   pipelineStageId?: mongoose.Types.ObjectId;
-  
+
   // Notes & Communication
   notes?: string;
   internalNotes?: string;
-  
+
   // Timestamps
   appliedAt: Date;
   reviewedAt?: Date;
   approvedAt?: Date;
   rejectedAt?: Date;
-  
+
   // Assignment
   assignedTo?: mongoose.Types.ObjectId;
   reviewedBy?: mongoose.Types.ObjectId;
   teamMembers?: mongoose.Types.ObjectId[]; // Array of team member IDs
-  
+
   // Metadata
   createdBy?: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
@@ -82,17 +82,17 @@ const ApplicationSchema = new Schema<IApplication>(
   {
     jobId: {
       type: Schema.Types.ObjectId,
-      ref: 'Job',
+      ref: "Job",
       required: false, // Optional - only required when approving to candidate
       index: true,
     },
     clientId: {
       type: Schema.Types.ObjectId,
-      ref: 'Client',
+      ref: "Client",
       required: false, // Optional - auto-fetched from job when approving
       index: true,
     },
-    
+
     // Candidate Info
     firstName: {
       type: String,
@@ -114,7 +114,7 @@ const ApplicationSchema = new Schema<IApplication>(
       type: String,
       trim: true,
     },
-    
+
     // Resume & Documents
     resumeUrl: {
       type: String,
@@ -135,32 +135,38 @@ const ApplicationSchema = new Schema<IApplication>(
     coverLetter: {
       type: String,
     },
-    additionalDocuments: [{
-      url: String,
-      originalName: String,
-      type: String,
-    }],
-    
+    additionalDocuments: [
+      {
+        url: String,
+        originalName: String,
+        type: String,
+      },
+    ],
+
     // Parsed Resume Data
     parsedData: {
       summary: String,
       skills: [String],
-      experience: [{
-        company: String,
-        title: String,
-        duration: String,
-        description: String,
-      }],
-      education: [{
-        institution: String,
-        degree: String,
-        field: String,
-        year: String,
-      }],
+      experience: [
+        {
+          company: String,
+          title: String,
+          duration: String,
+          description: String,
+        },
+      ],
+      education: [
+        {
+          institution: String,
+          degree: String,
+          field: String,
+          year: String,
+        },
+      ],
       certifications: [String],
       languages: [String],
     },
-    
+
     // AI Resume Validation
     isValidResume: {
       type: Boolean,
@@ -174,16 +180,16 @@ const ApplicationSchema = new Schema<IApplication>(
     validationReason: {
       type: String,
     },
-    
+
     // Application Details
     status: {
       type: String,
-      enum: ['pending', 'reviewing', 'shortlisted', 'rejected', 'approved'],
-      default: 'pending',
+      enum: ["pending", "reviewing", "shortlisted", "rejected", "approved"],
+      default: "pending",
     },
     source: {
       type: String,
-      enum: ['manual', 'direct_apply', 'email_automation'],
+      enum: ["manual", "direct_apply", "email_automation"],
       required: true,
       index: true,
     },
@@ -194,15 +200,15 @@ const ApplicationSchema = new Schema<IApplication>(
     },
     sourceEmailAccountId: {
       type: Schema.Types.ObjectId,
-      ref: 'EmailAccount',
+      ref: "EmailAccount",
     },
-    
+
     // Pipeline
     pipelineStageId: {
       type: Schema.Types.ObjectId,
-      ref: 'Pipeline.stages',
+      ref: "Pipeline.stages",
     },
-    
+
     // Notes
     notes: {
       type: String,
@@ -210,7 +216,7 @@ const ApplicationSchema = new Schema<IApplication>(
     internalNotes: {
       type: String,
     },
-    
+
     // Timestamps
     appliedAt: {
       type: Date,
@@ -226,30 +232,32 @@ const ApplicationSchema = new Schema<IApplication>(
     rejectedAt: {
       type: Date,
     },
-    
+
     // Assignment
     assignedTo: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       index: true,
     },
     reviewedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
-    teamMembers: [{
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-    }],
-    
+    teamMembers: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+
     // Metadata
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   {
@@ -269,8 +277,11 @@ ApplicationSchema.index({ assignedTo: 1, status: 1 });
 ApplicationSchema.index({ jobId: 1, email: 1 }, { unique: true });
 
 // Virtual for full name
-ApplicationSchema.virtual('fullName').get(function (this: IApplication) {
+ApplicationSchema.virtual("fullName").get(function (this: IApplication) {
   return `${this.firstName} ${this.lastName}`;
 });
 
-export const Application = mongoose.model<IApplication>('Application', ApplicationSchema);
+export const Application = mongoose.model<IApplication>(
+  "Application",
+  ApplicationSchema
+);

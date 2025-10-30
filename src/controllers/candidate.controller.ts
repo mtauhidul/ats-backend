@@ -146,41 +146,47 @@ export const getCandidates = asyncHandler(
 
     logger.info(`Found ${candidates.length} candidates`);
 
-    // Manually populate currentStage for each candidate
+    // Manually populate currentStage for each candidate - OPTIMIZED to avoid N+1 queries
     const { Pipeline } = await import('../models/Pipeline');
     
-    const candidatesWithStage = await Promise.all(
-      candidates.map(async (candidate: any) => {
-        if (candidate.currentPipelineStageId) {
-          try {
-            const pipeline = await Pipeline.findOne({
-              'stages._id': candidate.currentPipelineStageId
-            });
-            
-            if (pipeline) {
-              const stageId = candidate.currentPipelineStageId.toString();
-              const stage = pipeline.stages.find(
-                (s: any) => s._id.toString() === stageId
-              );
-              
-              if (stage) {
-                candidate.currentStage = {
-                  id: stage._id.toString(),
-                  name: stage.name,
-                  color: stage.color,
-                  order: stage.order,
-                };
-                logger.info(`Populated stage "${stage.name}" for candidate ${candidate.firstName} ${candidate.lastName}`);
-              }
-            }
-          } catch (error) {
-            logger.error('Error populating stage for candidate:', error);
-          }
-        }
+    // Collect all unique pipeline stage IDs
+    const stageIds = candidates
+      .filter((c: any) => c.currentPipelineStageId)
+      .map((c: any) => c.currentPipelineStageId);
+    
+    // Fetch all pipelines that contain these stages in ONE query
+    const pipelines = stageIds.length > 0 
+      ? await Pipeline.find({
+          'stages._id': { $in: stageIds }
+        }).lean()
+      : [];
+    
+    // Create a map of stageId -> stage data for fast lookup
+    const stageMap = new Map();
+    pipelines.forEach((pipeline: any) => {
+      pipeline.stages.forEach((stage: any) => {
+        stageMap.set(stage._id.toString(), {
+          id: stage._id.toString(),
+          name: stage.name,
+          color: stage.color,
+          order: stage.order,
+        });
+      });
+    });
+    
+    // Now populate stages for all candidates without additional queries
+    const candidatesWithStage = candidates.map((candidate: any) => {
+      if (candidate.currentPipelineStageId) {
+        const stageId = candidate.currentPipelineStageId.toString();
+        const stageData = stageMap.get(stageId);
         
-        return candidate;
-      })
-    );
+        if (stageData) {
+          candidate.currentStage = stageData;
+        }
+      }
+      
+      return candidate;
+    });
 
     successResponse(
       res,
@@ -675,7 +681,7 @@ export const getDashboardAnalytics = asyncHandler(
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - daysNum);
 
-    // Aggregate candidates by date
+    // Optimized aggregation - count by source type in the aggregation pipeline
     const analytics = await Candidate.aggregate([
       {
         $match: {
@@ -685,26 +691,70 @@ export const getDashboardAnalytics = asyncHandler(
       {
         $group: {
           _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+            date: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+            source: "$source"
           },
-          count: { $sum: 1 },
-          sources: { $push: "$source" }
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $group: {
+          _id: "$_id.date",
+          applications: { $sum: "$count" },
+          sourceBreakdown: {
+            $push: {
+              source: "$_id.source",
+              count: "$count"
+            }
+          }
         }
       },
       {
         $sort: { _id: 1 }
+      },
+      {
+        $project: {
+          date: "$_id",
+          applications: 1,
+          directSubmissions: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: "$sourceBreakdown",
+                    as: "item",
+                    cond: {
+                      $in: ["$$item.source", ["direct_submission", "manual_import"]]
+                    }
+                  }
+                },
+                as: "filtered",
+                in: "$$filtered.count"
+              }
+            }
+          },
+          emailApplications: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: "$sourceBreakdown",
+                    as: "item",
+                    cond: {
+                      $in: ["$$item.source", ["email", "email_application"]]
+                    }
+                  }
+                },
+                as: "filtered",
+                in: "$$filtered.count"
+              }
+            }
+          },
+          _id: 0
+        }
       }
     ]);
 
-    // Format the data for the chart
-    const chartData = analytics.map(item => ({
-      date: item._id,
-      applications: item.count,
-      // Group by source type if needed
-      directSubmissions: item.sources.filter((s: string) => s === 'direct_submission' || s === 'manual_import').length,
-      emailApplications: item.sources.filter((s: string) => s === 'email' || s === 'email_application').length,
-    }));
-
-    successResponse(res, chartData, 'Dashboard analytics retrieved successfully');
+    successResponse(res, analytics, 'Dashboard analytics retrieved successfully');
   }
 );

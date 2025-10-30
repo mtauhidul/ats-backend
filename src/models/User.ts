@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface IUser extends Document {
   email: string;
@@ -9,7 +9,12 @@ export interface IUser extends Document {
   phone?: string;
   title?: string; // Job title/position
   department?: string;
-  role: 'admin' | 'recruiter' | 'hiring_manager' | 'interviewer' | 'coordinator';
+  role:
+    | "admin"
+    | "recruiter"
+    | "hiring_manager"
+    | "interviewer"
+    | "coordinator";
   isActive: boolean;
   emailVerified: boolean;
   emailVerificationToken?: string;
@@ -74,8 +79,14 @@ const UserSchema = new Schema<IUser>(
     },
     role: {
       type: String,
-      enum: ['admin', 'recruiter', 'hiring_manager', 'interviewer', 'coordinator'],
-      default: 'recruiter',
+      enum: [
+        "admin",
+        "recruiter",
+        "hiring_manager",
+        "interviewer",
+        "coordinator",
+      ],
+      default: "recruiter",
       index: true,
     },
     isActive: {
@@ -145,7 +156,7 @@ UserSchema.index({ magicLinkToken: 1 });
 UserSchema.index({ passwordResetToken: 1 });
 
 // Virtual for full name
-UserSchema.virtual('fullName').get(function (this: IUser) {
+UserSchema.virtual("fullName").get(function (this: IUser) {
   return `${this.firstName} ${this.lastName}`;
 });
 
@@ -172,4 +183,4 @@ UserSchema.methods.toJSON = function () {
   };
 };
 
-export const User = mongoose.model<IUser>('User', UserSchema);
+export const User = mongoose.model<IUser>("User", UserSchema);

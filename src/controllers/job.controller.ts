@@ -113,39 +113,74 @@ export const getJobs = asyncHandler(
       .populate("tagIds", "name color")
       .sort(sort)
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean(); // Use lean for better performance
 
-    // Calculate statistics for each job
+    // Calculate statistics for ALL jobs in batch (avoid N+1 queries)
     const Candidate = mongoose.model("Candidate");
-    const jobsWithStats = await Promise.all(
-      jobs.map(async (job) => {
-        const jobObj = job.toObject();
-
-        // Count candidates for this job
-        const totalCandidates = await Candidate.countDocuments({
-          jobIds: job._id,
-        });
-
-        const activeCandidates = await Candidate.countDocuments({
-          jobIds: job._id,
-          status: { $in: ["active", "interviewing", "offered"] },
-        });
-
-        const hiredCandidates = await Candidate.countDocuments({
-          jobIds: job._id,
-          status: "hired",
-        });
-
-        return {
-          ...jobObj,
-          statistics: {
-            totalCandidates,
-            activeCandidates,
-            hiredCandidates,
+    const jobIds = jobs.map((j: any) => j._id);
+    
+    // Fetch ALL candidates for ALL jobs in ONE query with aggregation
+    const candidateStats = await Candidate.aggregate([
+      {
+        $match: {
+          jobIds: { $in: jobIds }
+        }
+      },
+      {
+        $unwind: "$jobIds"
+      },
+      {
+        $match: {
+          jobIds: { $in: jobIds }
+        }
+      },
+      {
+        $group: {
+          _id: "$jobIds",
+          total: { $sum: 1 },
+          active: {
+            $sum: {
+              $cond: [
+                { $in: ["$status", ["active", "interviewing", "offered"]] },
+                1,
+                0
+              ]
+            }
           },
-        };
-      })
-    );
+          hired: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "hired"] }, 1, 0]
+            }
+          }
+        }
+      }
+    ]);
+    
+    // Create a map for fast lookup
+    const statsMap = new Map();
+    candidateStats.forEach((stat: any) => {
+      statsMap.set(stat._id.toString(), {
+        totalCandidates: stat.total,
+        activeCandidates: stat.active,
+        hiredCandidates: stat.hired,
+      });
+    });
+    
+    // Add statistics to each job
+    const jobsWithStats = jobs.map((job: any) => {
+      const jobId = (job._id || job.id).toString();
+      const stats = statsMap.get(jobId) || {
+        totalCandidates: 0,
+        activeCandidates: 0,
+        hiredCandidates: 0,
+      };
+      
+      return {
+        ...job,
+        statistics: stats,
+      };
+    });
 
     successResponse(
       res,

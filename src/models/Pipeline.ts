@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface IPipelineStage {
   _id: mongoose.Types.ObjectId;
@@ -12,7 +12,7 @@ export interface IPipelineStage {
 export interface IPipeline extends Document {
   name: string;
   description?: string;
-  type: 'candidate' | 'interview' | 'custom';
+  type: "candidate" | "interview" | "custom";
   stages: IPipelineStage[];
   isDefault: boolean;
   isActive: boolean;
@@ -40,7 +40,7 @@ const PipelineStageSchema = new Schema<IPipelineStage>(
     },
     color: {
       type: String,
-      default: '#6B7280',
+      default: "#6B7280",
     },
     isActive: {
       type: Boolean,
@@ -63,8 +63,8 @@ const PipelineSchema = new Schema<IPipeline>(
     },
     type: {
       type: String,
-      enum: ['candidate', 'interview', 'custom'],
-      default: 'candidate',
+      enum: ["candidate", "interview", "custom"],
+      default: "candidate",
       index: true,
     },
     stages: [PipelineStageSchema],
@@ -79,12 +79,12 @@ const PipelineSchema = new Schema<IPipeline>(
     },
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   {
@@ -96,7 +96,7 @@ const PipelineSchema = new Schema<IPipeline>(
         ret.id = ret._id.toString();
         delete ret._id;
         delete ret.__v;
-        
+
         // Transform stage _ids to id
         if (ret.stages && Array.isArray(ret.stages)) {
           ret.stages = ret.stages.map((stage: any) => {
@@ -107,7 +107,7 @@ const PipelineSchema = new Schema<IPipeline>(
             return stage;
           });
         }
-        
+
         return ret;
       },
     },
@@ -120,6 +120,9 @@ PipelineSchema.index({ type: 1, isActive: 1 });
 PipelineSchema.index({ isDefault: 1 });
 
 // Only one default pipeline per type
-PipelineSchema.index({ type: 1, isDefault: 1 }, { unique: true, partialFilterExpression: { isDefault: true } });
+PipelineSchema.index(
+  { type: 1, isDefault: 1 },
+  { unique: true, partialFilterExpression: { isDefault: true } }
+);
 
-export const Pipeline = mongoose.model<IPipeline>('Pipeline', PipelineSchema);
+export const Pipeline = mongoose.model<IPipeline>("Pipeline", PipelineSchema);

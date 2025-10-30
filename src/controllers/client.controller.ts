@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { Client } from '../models';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
-import { NotFoundError, ValidationError as CustomValidationError } from '../utils/errors';
+import { NotFoundError, ValidationError as CustomValidationError, BadRequestError } from '../utils/errors';
 import logger from '../utils/logger';
 import {
   CreateClientInput,
@@ -148,19 +148,98 @@ export const getClients = asyncHandler(
     const clients = await Client.find(filter)
       .sort(sort)
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean(); // Use lean for better performance
 
-    // Calculate statistics for each client
-    const clientsWithStats = await Promise.all(
-      clients.map(async (client) => {
-        const clientObj = client.toJSON() as any;
-        const stats = await calculateClientStatistics(clientObj.id || clientObj._id);
-        return {
-          ...clientObj,
-          statistics: stats,
-        };
-      })
-    );
+    // Calculate statistics for ALL clients in batch (avoid N+1 queries)
+    const Job = mongoose.model('Job');
+    const Candidate = mongoose.model('Candidate');
+    
+    const clientIds = clients.map((c: any) => c._id);
+    
+    // Batch fetch all jobs for all clients in ONE query
+    const allJobs = await Job.find({ 
+      clientId: { $in: clientIds } 
+    }).select('clientId status').lean();
+    
+    // Get all job IDs
+    const allJobIds = allJobs.map((j: any) => j._id);
+    
+    // Batch fetch all candidates for all jobs in ONE query
+    const allCandidates = await Candidate.find({
+      jobIds: { $in: allJobIds }
+    }).select('jobIds status').lean();
+    
+    // Group jobs by clientId for fast lookup
+    const jobsByClient = new Map();
+    allJobs.forEach((job: any) => {
+      const clientId = job.clientId.toString();
+      if (!jobsByClient.has(clientId)) {
+        jobsByClient.set(clientId, []);
+      }
+      jobsByClient.get(clientId).push(job);
+    });
+    
+    // Group candidates by clientId (via their jobs)
+    const candidatesByClient = new Map();
+    allCandidates.forEach((candidate: any) => {
+      const jobIds = candidate.jobIds.map((id: any) => id.toString());
+      allJobs.forEach((job: any) => {
+        if (jobIds.includes(job._id.toString())) {
+          const clientId = job.clientId.toString();
+          if (!candidatesByClient.has(clientId)) {
+            candidatesByClient.set(clientId, []);
+          }
+          candidatesByClient.get(clientId).push(candidate);
+        }
+      });
+    });
+    
+    // Calculate statistics for each client using cached data
+    const clientsWithStats = clients.map((client: any) => {
+      const clientId = (client._id || client.id).toString();
+      const jobs = jobsByClient.get(clientId) || [];
+      const candidates = candidatesByClient.get(clientId) || [];
+      
+      const totalJobs = jobs.length;
+      const activeJobs = jobs.filter((j: any) => j.status === 'open').length;
+      const closedJobs = jobs.filter((j: any) => j.status === 'closed').length;
+      const draftJobs = jobs.filter((j: any) => j.status === 'draft').length;
+      
+      // Deduplicate candidates by ID
+      const uniqueCandidates = Array.from(
+        new Map(candidates.map((c: any) => [c._id.toString(), c])).values()
+      );
+      
+      const totalCandidates = uniqueCandidates.length;
+      const activeCandidates = uniqueCandidates.filter((c: any) =>
+        ['active', 'interviewing', 'offered'].includes(c.status)
+      ).length;
+      const hiredCandidates = uniqueCandidates.filter((c: any) => c.status === 'hired').length;
+      const rejectedCandidates = uniqueCandidates.filter((c: any) =>
+        ['rejected', 'withdrawn'].includes(c.status)
+      ).length;
+      
+      const successRate = totalCandidates > 0
+        ? Math.round((hiredCandidates / totalCandidates) * 100)
+        : 0;
+      
+      return {
+        ...client,
+        id: client._id.toString(), // Transform _id to id for frontend
+        statistics: {
+          totalJobs,
+          activeJobs,
+          closedJobs,
+          draftJobs,
+          totalCandidates,
+          activeCandidates,
+          hiredCandidates,
+          rejectedCandidates,
+          successRate,
+        },
+      };
+    });
 
     successResponse(
       res,
@@ -179,6 +258,11 @@ export const getClients = asyncHandler(
 export const getClientById = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
+
+    // Validate ID - prevent "undefined" or invalid ObjectId
+    if (!id || id === 'undefined' || !mongoose.Types.ObjectId.isValid(id)) {
+      throw new BadRequestError('Invalid client ID');
+    }
 
     const client = await Client.findById(id)
       .populate('assignedTo', 'firstName lastName email');

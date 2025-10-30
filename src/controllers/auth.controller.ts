@@ -253,12 +253,12 @@ export const login = asyncHandler(
     user.lastLogin = new Date();
     await user.save();
 
-    // Log activity
-    await logActivity({
+    // Log activity (fire-and-forget to not block login)
+    logActivity({
       userId: String(user._id),
       action: 'login',
       metadata: { method: 'password' }
-    });
+    }).catch(err => logger.error('Failed to log login activity:', err));
 
     logger.info(`User logged in: ${user.email}`);
 

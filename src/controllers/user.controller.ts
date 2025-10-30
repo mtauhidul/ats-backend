@@ -59,7 +59,8 @@ export const getUsers = asyncHandler(
       .sort(sort)
       .skip(skip)
       .limit(limit)
-      .select('-__v');
+      .select('-__v')
+      .lean(); // Use lean for better performance
 
     successResponse(
       res,

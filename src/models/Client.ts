@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 // Frontend-compatible Client schema
 export interface IClient extends Document {
@@ -10,9 +10,19 @@ export interface IClient extends Document {
   logo?: string;
 
   // Classification (Required)
-  industry: 'technology' | 'healthcare' | 'finance' | 'education' | 'retail' | 'manufacturing' | 'consulting' | 'real_estate' | 'hospitality' | 'other';
-  companySize: '1-50' | '51-200' | '201-500' | '500+';
-  status: 'active' | 'inactive' | 'pending' | 'on_hold';
+  industry:
+    | "technology"
+    | "healthcare"
+    | "finance"
+    | "education"
+    | "retail"
+    | "manufacturing"
+    | "consulting"
+    | "real_estate"
+    | "hospitality"
+    | "other";
+  companySize: "1-50" | "51-200" | "201-500" | "500+";
+  status: "active" | "inactive" | "pending" | "on_hold";
 
   // Location (Structured object matching frontend)
   address?: {
@@ -57,7 +67,7 @@ export interface IClient extends Document {
   communicationNotes?: Array<{
     id: string;
     clientId: string;
-    type: 'email' | 'phone' | 'meeting' | 'video_call' | 'general';
+    type: "email" | "phone" | "meeting" | "video_call" | "general";
     subject: string;
     content: string;
     createdBy: string;
@@ -122,18 +132,29 @@ const ClientSchema = new Schema<IClient>(
     // Classification
     industry: {
       type: String,
-      enum: ['technology', 'healthcare', 'finance', 'education', 'retail', 'manufacturing', 'consulting', 'real_estate', 'hospitality', 'other'],
+      enum: [
+        "technology",
+        "healthcare",
+        "finance",
+        "education",
+        "retail",
+        "manufacturing",
+        "consulting",
+        "real_estate",
+        "hospitality",
+        "other",
+      ],
       required: true,
     },
     companySize: {
       type: String,
-      enum: ['1-50', '51-200', '201-500', '500+'],
+      enum: ["1-50", "51-200", "201-500", "500+"],
       required: true,
     },
     status: {
       type: String,
-      enum: ['active', 'inactive', 'pending', 'on_hold'],
-      default: 'active',
+      enum: ["active", "inactive", "pending", "on_hold"],
+      default: "active",
     },
 
     // Location - Structured object
@@ -149,23 +170,25 @@ const ClientSchema = new Schema<IClient>(
     description: String,
 
     // Contacts array
-    contacts: [{
-      id: String,
-      name: {
-        type: String,
-        required: true,
+    contacts: [
+      {
+        id: String,
+        name: {
+          type: String,
+          required: true,
+        },
+        email: {
+          type: String,
+          required: true,
+        },
+        phone: String,
+        position: String,
+        isPrimary: {
+          type: Boolean,
+          default: false,
+        },
       },
-      email: {
-        type: String,
-        required: true,
-      },
-      phone: String,
-      position: String,
-      isPrimary: {
-        type: Boolean,
-        default: false,
-      },
-    }],
+    ],
 
     // Statistics
     statistics: {
@@ -182,38 +205,44 @@ const ClientSchema = new Schema<IClient>(
     },
 
     // Relations
-    jobIds: [{
-      type: Schema.Types.ObjectId,
-      ref: 'Job',
-    }],
+    jobIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Job",
+      },
+    ],
 
     // Communication Notes
-    communicationNotes: [{
-      id: String,
-      clientId: String,
-      type: {
-        type: String,
-        enum: ['email', 'phone', 'meeting', 'video_call', 'general'],
+    communicationNotes: [
+      {
+        id: String,
+        clientId: String,
+        type: {
+          type: String,
+          enum: ["email", "phone", "meeting", "video_call", "general"],
+        },
+        subject: String,
+        content: String,
+        createdBy: String,
+        createdByName: String,
+        createdAt: Date,
+        updatedAt: Date,
       },
-      subject: String,
-      content: String,
-      createdBy: String,
-      createdByName: String,
-      createdAt: Date,
-      updatedAt: Date,
-    }],
+    ],
 
     // Activity History
-    activityHistory: [{
-      id: String,
-      clientId: String,
-      action: String,
-      description: String,
-      performedBy: String,
-      performedByName: String,
-      timestamp: Date,
-      metadata: Schema.Types.Mixed,
-    }],
+    activityHistory: [
+      {
+        id: String,
+        clientId: String,
+        action: String,
+        description: String,
+        performedBy: String,
+        performedByName: String,
+        timestamp: Date,
+        metadata: Schema.Types.Mixed,
+      },
+    ],
 
     // Tags
     tags: [String],
@@ -221,19 +250,19 @@ const ClientSchema = new Schema<IClient>(
     // Assignment
     assignedTo: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
     assignedToName: String,
 
     // Metadata
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   {
@@ -259,7 +288,7 @@ ClientSchema.index({ createdAt: -1 });
 ClientSchema.index({ assignedTo: 1 });
 
 // Pre-save hook to initialize statistics if not present
-ClientSchema.pre('save', function (next) {
+ClientSchema.pre("save", function (next) {
   if (!this.statistics) {
     this.statistics = {
       totalJobs: 0,
@@ -275,4 +304,4 @@ ClientSchema.pre('save', function (next) {
   next();
 });
 
-export const Client = mongoose.model<IClient>('Client', ClientSchema);
+export const Client = mongoose.model<IClient>("Client", ClientSchema);

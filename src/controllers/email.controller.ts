@@ -1,8 +1,13 @@
-import { Request, Response } from 'express';
-import { Email } from '../models';
-import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
-import { NotFoundError } from '../utils/errors';
-import logger from '../utils/logger';
+import { Request, Response } from "express";
+import { Email } from "../models";
+import resendService from "../services/resend.service";
+import { NotFoundError } from "../utils/errors";
+import {
+  asyncHandler,
+  paginateResults,
+  successResponse,
+} from "../utils/helpers";
+import logger from "../utils/logger";
 
 /**
  * Get all emails with filters and pagination
@@ -18,8 +23,8 @@ export const getEmails = asyncHandler(
       jobId,
       status,
       search,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
+      sortBy = "createdAt",
+      sortOrder = "desc",
     } = req.query as any;
 
     // Build filter
@@ -32,10 +37,10 @@ export const getEmails = asyncHandler(
 
     if (search) {
       filter.$or = [
-        { from: { $regex: search, $options: 'i' } },
-        { to: { $regex: search, $options: 'i' } },
-        { subject: { $regex: search, $options: 'i' } },
-        { body: { $regex: search, $options: 'i' } },
+        { from: { $regex: search, $options: "i" } },
+        { to: { $regex: search, $options: "i" } },
+        { subject: { $regex: search, $options: "i" } },
+        { body: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -55,16 +60,16 @@ export const getEmails = asyncHandler(
 
     // Build sort object
     const sort: any = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
 
     // Fetch data
     const emails = await Email.find(filter)
-      .populate('candidateId', 'firstName lastName email')
-      .populate('applicationId', 'firstName lastName')
-      .populate('jobId', 'title')
-      .populate('clientId', 'companyName')
-      .populate('interviewId', 'title scheduledAt')
-      .populate('sentBy', 'firstName lastName email')
+      .populate("candidateId", "firstName lastName email")
+      .populate("applicationId", "firstName lastName")
+      .populate("jobId", "title")
+      .populate("clientId", "companyName")
+      .populate("interviewId", "title scheduledAt")
+      .populate("sentBy", "firstName lastName email")
       .sort(sort)
       .skip(skip)
       .limit(limit);
@@ -75,7 +80,7 @@ export const getEmails = asyncHandler(
         emails,
         pagination,
       },
-      'Emails retrieved successfully'
+      "Emails retrieved successfully"
     );
   }
 );
@@ -88,18 +93,18 @@ export const getEmailById = asyncHandler(
     const { id } = req.params;
 
     const email = await Email.findById(id)
-      .populate('candidateId', 'firstName lastName email phone')
-      .populate('applicationId', 'firstName lastName resumeUrl')
-      .populate('jobId', 'title description')
-      .populate('clientId', 'companyName')
-      .populate('interviewId', 'title scheduledAt type')
-      .populate('sentBy', 'firstName lastName email avatar');
+      .populate("candidateId", "firstName lastName email phone")
+      .populate("applicationId", "firstName lastName resumeUrl")
+      .populate("jobId", "title description")
+      .populate("clientId", "companyName")
+      .populate("interviewId", "title scheduledAt type")
+      .populate("sentBy", "firstName lastName email avatar");
 
     if (!email) {
-      throw new NotFoundError('Email not found');
+      throw new NotFoundError("Email not found");
     }
 
-    successResponse(res, email, 'Email retrieved successfully');
+    successResponse(res, email, "Email retrieved successfully");
   }
 );
 
@@ -108,30 +113,48 @@ export const getEmailById = asyncHandler(
  */
 export const sendEmail = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const data = req.body;
+    const {
+      to,
+      subject,
+      body,
+      bodyHtml,
+      cc,
+      bcc,
+      candidateId,
+      jobId,
+      clientId,
+      applicationId,
+      interviewId,
+    } = req.body;
 
-    // Create email record
-    const email = await Email.create({
-      ...data,
-      direction: 'outbound',
-      status: 'sent',
-      sentAt: new Date(),
-      sentBy: req.user?._id,
+    // Send email via Resend service (this will also save to database)
+    const result = await resendService.sendEmail({
+      to,
+      subject,
+      body,
+      bodyHtml,
+      cc,
+      bcc,
+      candidateId,
+      jobId,
+      clientId,
+      applicationId,
+      interviewId,
+      sentBy: req.user?._id?.toString(),
     });
 
-    // TODO: Integrate with email service (Resend) to actually send the email
-    // For now, we just save the record
-
-    // Populate references
-    await email.populate([
-      { path: 'candidateId', select: 'firstName lastName email' },
-      { path: 'jobId', select: 'title' },
-      { path: 'sentBy', select: 'firstName lastName email' },
+    // Fetch the created email record with populated references
+    const email = await Email.findById(result.emailId).populate([
+      { path: "candidateId", select: "firstName lastName email" },
+      { path: "jobId", select: "title" },
+      { path: "sentBy", select: "firstName lastName email" },
     ]);
 
-    logger.info(`Email sent to ${email.to.join(', ')} by ${req.user?.email}`);
+    logger.info(
+      `Email sent via Resend: ${result.id} to ${Array.isArray(to) ? to.join(", ") : to}`
+    );
 
-    successResponse(res, email, 'Email sent successfully', 201);
+    successResponse(res, email, "Email sent successfully", 201);
   }
 );
 
@@ -144,20 +167,20 @@ export const createDraft = asyncHandler(
 
     const email = await Email.create({
       ...data,
-      direction: 'outbound',
-      status: 'draft',
+      direction: "outbound",
+      status: "draft",
       sentBy: req.user?._id,
     });
 
     await email.populate([
-      { path: 'candidateId', select: 'firstName lastName email' },
-      { path: 'jobId', select: 'title' },
-      { path: 'sentBy', select: 'firstName lastName email' },
+      { path: "candidateId", select: "firstName lastName email" },
+      { path: "jobId", select: "title" },
+      { path: "sentBy", select: "firstName lastName email" },
     ]);
 
     logger.info(`Email draft created by ${req.user?.email}`);
 
-    successResponse(res, email, 'Draft created successfully', 201);
+    successResponse(res, email, "Draft created successfully", 201);
   }
 );
 
@@ -169,24 +192,24 @@ export const updateDraft = asyncHandler(
     const { id } = req.params;
     const updates = req.body;
 
-    const email = await Email.findOne({ _id: id, status: 'draft' });
+    const email = await Email.findOne({ _id: id, status: "draft" });
 
     if (!email) {
-      throw new NotFoundError('Draft not found');
+      throw new NotFoundError("Draft not found");
     }
 
     Object.assign(email, updates);
     await email.save();
 
     await email.populate([
-      { path: 'candidateId', select: 'firstName lastName email' },
-      { path: 'jobId', select: 'title' },
-      { path: 'sentBy', select: 'firstName lastName email' },
+      { path: "candidateId", select: "firstName lastName email" },
+      { path: "jobId", select: "title" },
+      { path: "sentBy", select: "firstName lastName email" },
     ]);
 
     logger.info(`Email draft updated: ${id} by ${req.user?.email}`);
 
-    successResponse(res, email, 'Draft updated successfully');
+    successResponse(res, email, "Draft updated successfully");
   }
 );
 
@@ -197,27 +220,27 @@ export const sendDraft = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const email = await Email.findOne({ _id: id, status: 'draft' });
+    const email = await Email.findOne({ _id: id, status: "draft" });
 
     if (!email) {
-      throw new NotFoundError('Draft not found');
+      throw new NotFoundError("Draft not found");
     }
 
-    email.status = 'sent';
+    email.status = "sent";
     email.sentAt = new Date();
     await email.save();
 
     // TODO: Integrate with email service (Resend) to actually send the email
 
     await email.populate([
-      { path: 'candidateId', select: 'firstName lastName email' },
-      { path: 'jobId', select: 'title' },
-      { path: 'sentBy', select: 'firstName lastName email' },
+      { path: "candidateId", select: "firstName lastName email" },
+      { path: "jobId", select: "title" },
+      { path: "sentBy", select: "firstName lastName email" },
     ]);
 
     logger.info(`Email draft sent: ${id} by ${req.user?.email}`);
 
-    successResponse(res, email, 'Email sent successfully');
+    successResponse(res, email, "Email sent successfully");
   }
 );
 
@@ -231,11 +254,11 @@ export const deleteEmail = asyncHandler(
     const email = await Email.findById(id);
 
     if (!email) {
-      throw new NotFoundError('Email not found');
+      throw new NotFoundError("Email not found");
     }
 
     // Hard delete drafts, soft delete (mark as deleted) for sent emails
-    if (email.status === 'draft') {
+    if (email.status === "draft") {
       await Email.findByIdAndDelete(id);
     } else {
       // For sent emails, we might want to keep the record
@@ -245,7 +268,7 @@ export const deleteEmail = asyncHandler(
 
     logger.info(`Email deleted: ${id} by ${req.user?.email}`);
 
-    successResponse(res, { id }, 'Email deleted successfully');
+    successResponse(res, { id }, "Email deleted successfully");
   }
 );
 
@@ -257,11 +280,11 @@ export const getEmailThread = asyncHandler(
     const { threadId } = req.params;
 
     const emails = await Email.find({ threadId })
-      .populate('candidateId', 'firstName lastName email')
-      .populate('sentBy', 'firstName lastName email avatar')
+      .populate("candidateId", "firstName lastName email")
+      .populate("sentBy", "firstName lastName email avatar")
       .sort({ createdAt: 1 });
 
-    successResponse(res, emails, 'Email thread retrieved successfully');
+    successResponse(res, emails, "Email thread retrieved successfully");
   }
 );
 
@@ -273,12 +296,12 @@ export const getCandidateEmails = asyncHandler(
     const { candidateId } = req.params;
 
     const emails = await Email.find({ candidateId })
-      .populate('jobId', 'title')
-      .populate('sentBy', 'firstName lastName email avatar')
+      .populate("jobId", "title")
+      .populate("sentBy", "firstName lastName email avatar")
       .sort({ createdAt: -1 })
       .limit(50);
 
-    successResponse(res, emails, 'Candidate emails retrieved successfully');
+    successResponse(res, emails, "Candidate emails retrieved successfully");
   }
 );
 
@@ -288,10 +311,16 @@ export const getCandidateEmails = asyncHandler(
 export const getEmailStats = asyncHandler(
   async (_req: Request, res: Response): Promise<void> => {
     const totalEmails = await Email.countDocuments();
-    const sentEmails = await Email.countDocuments({ direction: 'outbound', status: 'sent' });
-    const receivedEmails = await Email.countDocuments({ direction: 'inbound', status: 'received' });
-    const draftEmails = await Email.countDocuments({ status: 'draft' });
-    const failedEmails = await Email.countDocuments({ status: 'failed' });
+    const sentEmails = await Email.countDocuments({
+      direction: "outbound",
+      status: "sent",
+    });
+    const receivedEmails = await Email.countDocuments({
+      direction: "inbound",
+      status: "received",
+    });
+    const draftEmails = await Email.countDocuments({ status: "draft" });
+    const failedEmails = await Email.countDocuments({ status: "failed" });
 
     successResponse(
       res,
@@ -302,7 +331,7 @@ export const getEmailStats = asyncHandler(
         draftEmails,
         failedEmails,
       },
-      'Email statistics retrieved successfully'
+      "Email statistics retrieved successfully"
     );
   }
 );

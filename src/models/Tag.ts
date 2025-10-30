@@ -1,10 +1,10 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface ITag extends Document {
   name: string;
   description?: string;
   color?: string;
-  type: 'job' | 'candidate' | 'skill' | 'general';
+  type: "job" | "candidate" | "skill" | "general";
   isActive: boolean;
   createdBy: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
@@ -26,12 +26,12 @@ const TagSchema = new Schema<ITag>(
     },
     color: {
       type: String,
-      default: '#10B981',
+      default: "#10B981",
     },
     type: {
       type: String,
-      enum: ['job', 'candidate', 'skill', 'general'],
-      default: 'general',
+      enum: ["job", "candidate", "skill", "general"],
+      default: "general",
       index: true,
     },
     isActive: {
@@ -41,12 +41,12 @@ const TagSchema = new Schema<ITag>(
     },
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   {
@@ -58,4 +58,4 @@ const TagSchema = new Schema<ITag>(
 // Note: name already has unique index from unique: true
 TagSchema.index({ type: 1, isActive: 1 });
 
-export const Tag = mongoose.model<ITag>('Tag', TagSchema);
+export const Tag = mongoose.model<ITag>("Tag", TagSchema);

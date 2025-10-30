@@ -193,7 +193,8 @@ export const getApplications = asyncHandler(
       .populate('reviewedBy', 'firstName lastName email')
       .sort(sort)
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean(); // Use lean for better performance
 
     successResponse(
       res,
