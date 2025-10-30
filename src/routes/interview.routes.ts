@@ -9,6 +9,8 @@ import {
   addFeedback,
   deleteInterview,
   getUpcomingInterviews,
+  createZoomMeeting,
+  completeInterview,
 } from '../controllers/interview.controller';
 
 const router = express.Router();
@@ -82,6 +84,17 @@ router.post(
 );
 
 /**
+ * @route   POST /api/interviews/:id/complete
+ * @desc    Complete interview and submit review
+ * @access  Interviewer, Recruiter, Hiring Manager, Admin, Super Admin
+ */
+router.post(
+  '/:id/complete',
+  requireRole('interviewer', 'recruiter', 'hiring_manager', 'admin'),
+  completeInterview
+);
+
+/**
  * @route   POST /api/interviews/:id/feedback
  * @desc    Add feedback to interview
  * @access  Interviewer, Recruiter, Hiring Manager, Admin, Super Admin
@@ -90,6 +103,17 @@ router.post(
   '/:id/feedback',
   requireRole('interviewer', 'recruiter', 'hiring_manager', 'admin'),
   addFeedback
+);
+
+/**
+ * @route   POST /api/interviews/:id/zoom-meeting
+ * @desc    Create Zoom meeting for interview
+ * @access  Recruiter, Hiring Manager, Admin, Super Admin
+ */
+router.post(
+  '/:id/zoom-meeting',
+  requireRole('recruiter', 'hiring_manager', 'admin'),
+  createZoomMeeting
 );
 
 /**

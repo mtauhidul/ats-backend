@@ -660,3 +660,51 @@ export const getTopCandidates = asyncHandler(
     successResponse(res, candidates, 'Top candidates retrieved successfully');
   }
 );
+
+/**
+ * Get dashboard analytics
+ * Returns candidate applications grouped by date for chart
+ */
+export const getDashboardAnalytics = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const { days = '90' } = req.query;
+    const daysNum = parseInt(days as string, 10);
+    
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysNum);
+
+    // Aggregate candidates by date
+    const analytics = await Candidate.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate, $lte: endDate }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          count: { $sum: 1 },
+          sources: { $push: "$source" }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]);
+
+    // Format the data for the chart
+    const chartData = analytics.map(item => ({
+      date: item._id,
+      applications: item.count,
+      // Group by source type if needed
+      directSubmissions: item.sources.filter((s: string) => s === 'direct_submission' || s === 'manual_import').length,
+      emailApplications: item.sources.filter((s: string) => s === 'email' || s === 'email_application').length,
+    }));
+
+    successResponse(res, chartData, 'Dashboard analytics retrieved successfully');
+  }
+);

@@ -14,6 +14,7 @@ import {
   getTopCandidates,
   addCandidatesToPipeline,
   getCandidatesWithoutPipeline,
+  getDashboardAnalytics,
 } from '../controllers/candidate.controller';
 import {
   createCandidateSchema,
@@ -182,6 +183,16 @@ router.get(
   '/pipeline/unassigned',
   requireRole('recruiter', 'admin', 'hiring_manager'),
   getCandidatesWithoutPipeline
+);
+
+/**
+ * @route   GET /api/candidates/analytics/dashboard
+ * @desc    Get dashboard analytics (application trends by date)
+ * @access  All authenticated users
+ */
+router.get(
+  '/analytics/dashboard',
+  getDashboardAnalytics
 );
 
 export default router;

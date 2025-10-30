@@ -2,7 +2,6 @@ import { NextFunction, Request, Response } from "express";
 import { IUser, User } from "../models";
 import { AuthenticationError, AuthorizationError } from "../utils/errors";
 import { verifyAccessToken, TokenPayload } from "../utils/auth";
-import logger from "../utils/logger";
 
 // Extend Express Request to include user
 declare global {
@@ -58,7 +57,6 @@ export const authenticate = async (
 
     next();
   } catch (error: unknown) {
-    logger.error("Authentication error:", error);
     const errorMessage = (error as Error).message || "Authentication failed";
     next(new AuthenticationError(errorMessage));
   }

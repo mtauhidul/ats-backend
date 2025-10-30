@@ -390,6 +390,185 @@ export const sendAssignmentEmail = async (
   });
 };
 
+/**
+ * Send interview notification email to candidate
+ */
+export const sendInterviewNotificationEmail = async (options: {
+  candidateEmail: string;
+  candidateName: string;
+  jobTitle: string;
+  interviewTitle: string;
+  interviewType: string;
+  scheduledAt: Date;
+  duration: number;
+  meetingLink?: string;
+  meetingPassword?: string;
+  interviewerNames?: string[];
+  isInstant?: boolean;
+}): Promise<string | null> => {
+  const {
+    candidateEmail,
+    candidateName,
+    jobTitle,
+    interviewTitle,
+    interviewType,
+    scheduledAt,
+    duration,
+    meetingLink,
+    meetingPassword,
+    interviewerNames,
+    isInstant,
+  } = options;
+
+  const scheduledDate = new Date(scheduledAt);
+  const formattedDate = scheduledDate.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const formattedTime = scheduledDate.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+
+  const interviewTypeDisplay = interviewType === 'video' 
+    ? 'Video Interview' 
+    : interviewType === 'phone' 
+    ? 'Phone Interview' 
+    : interviewType === 'in-person'
+    ? 'In-Person Interview'
+    : 'Interview';
+
+  const interviewerList = interviewerNames && interviewerNames.length > 0
+    ? `<p><strong>Interviewer(s):</strong> ${interviewerNames.join(', ')}</p>`
+    : '';
+
+  const meetingDetails = meetingLink
+    ? `
+      <div style="background: #f0f9ff; border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 20px 0;">
+        <h3 style="margin-top: 0; color: #1e40af;">🎥 Video Meeting Details</h3>
+        <p><strong>Meeting Link:</strong><br/>
+        <a href="${meetingLink}" style="color: #2563eb; word-break: break-all;">${meetingLink}</a></p>
+        ${meetingPassword ? `<p><strong>Password:</strong> ${meetingPassword}</p>` : ''}
+        <p style="color: #6b7280; font-size: 14px; margin-bottom: 0;">💡 Tip: Click the link above to join the meeting. Make sure you have Zoom installed or join via browser.</p>
+      </div>
+    `
+    : '';
+
+  const instantBadge = isInstant
+    ? '<span style="background: #10b981; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold;">INSTANT MEETING</span>'
+    : '';
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #2563eb; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+          .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+          .info-box { background: white; border-left: 4px solid #2563eb; padding: 15px; margin: 20px 0; }
+          .button { display: inline-block; background: #2563eb; color: white !important; padding: 12px 30px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+          .footer { text-align: center; margin-top: 30px; color: #6b7280; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>📅 Interview Scheduled ${instantBadge}</h1>
+          </div>
+          <div class="content">
+            <p>Hi ${candidateName},</p>
+            ${isInstant 
+              ? '<p><strong>Great news!</strong> An instant interview meeting has been created for you. The meeting is starting soon!</p>'
+              : '<p><strong>Great news!</strong> Your interview has been scheduled for the <strong>${jobTitle}</strong> position.</p>'
+            }
+            
+            <div class="info-box">
+              <h3 style="margin-top: 0;">Interview Details</h3>
+              <p><strong>Position:</strong> ${jobTitle}</p>
+              <p><strong>Interview:</strong> ${interviewTitle}</p>
+              <p><strong>Type:</strong> ${interviewTypeDisplay}</p>
+              <p><strong>Date:</strong> ${formattedDate}</p>
+              <p><strong>Time:</strong> ${formattedTime}</p>
+              <p><strong>Duration:</strong> ${duration} minutes</p>
+              ${interviewerList}
+            </div>
+
+            ${meetingDetails}
+
+            ${!isInstant ? `
+              <p><strong>What to prepare:</strong></p>
+              <ul>
+                <li>Review the job description and your application</li>
+                <li>Prepare questions about the role and company</li>
+                <li>Test your video/audio if it's a video interview</li>
+                <li>Have a copy of your resume handy</li>
+              </ul>
+            ` : ''}
+
+            <p>We're looking forward to speaking with you!</p>
+            <p>If you need to reschedule or have any questions, please contact us as soon as possible.</p>
+          </div>
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} ATS. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const text = `
+    Interview Scheduled ${isInstant ? '(INSTANT MEETING)' : ''}
+    
+    Hi ${candidateName},
+    
+    ${isInstant 
+      ? 'Great news! An instant interview meeting has been created for you. The meeting is starting soon!'
+      : `Great news! Your interview has been scheduled for the ${jobTitle} position.`
+    }
+    
+    Interview Details:
+    - Position: ${jobTitle}
+    - Interview: ${interviewTitle}
+    - Type: ${interviewTypeDisplay}
+    - Date: ${formattedDate}
+    - Time: ${formattedTime}
+    - Duration: ${duration} minutes
+    ${interviewerNames && interviewerNames.length > 0 ? `- Interviewer(s): ${interviewerNames.join(', ')}` : ''}
+    
+    ${meetingLink ? `
+    Video Meeting Details:
+    Meeting Link: ${meetingLink}
+    ${meetingPassword ? `Password: ${meetingPassword}` : ''}
+    ` : ''}
+    
+    ${!isInstant ? `
+    What to prepare:
+    - Review the job description and your application
+    - Prepare questions about the role and company
+    - Test your video/audio if it's a video interview
+    - Have a copy of your resume handy
+    ` : ''}
+    
+    We're looking forward to speaking with you!
+    
+    If you need to reschedule or have any questions, please contact us as soon as possible.
+  `;
+
+  return sendEmail({
+    to: candidateEmail,
+    subject: isInstant 
+      ? `🚀 Instant Interview Meeting - ${jobTitle}` 
+      : `Interview Scheduled - ${jobTitle}`,
+    html,
+    text,
+  });
+};
+
 export default {
   sendEmail,
   sendInvitationEmail,
@@ -397,4 +576,5 @@ export default {
   sendPasswordResetEmail,
   sendTeamMemberUpdateEmail,
   sendAssignmentEmail,
+  sendInterviewNotificationEmail,
 };

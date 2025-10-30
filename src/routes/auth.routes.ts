@@ -138,8 +138,8 @@ router.patch(
   updateProfile
 );
 
-// Logout
-router.post('/logout', authenticate, logout);
+// Logout - no authentication required (token might be expired)
+router.post('/logout', logout);
 
 // Update password (logged in users)
 router.post(
