@@ -112,7 +112,6 @@ const JobSchema = new Schema<IJob>(
       type: String,
       enum: ['draft', 'open', 'closed', 'on_hold'],
       default: 'draft',
-      index: true,
     },
     openings: {
       type: Number,
@@ -122,7 +121,6 @@ const JobSchema = new Schema<IJob>(
     },
     applicationDeadline: {
       type: Date,
-      index: true,
     },
     startDate: {
       type: Date,

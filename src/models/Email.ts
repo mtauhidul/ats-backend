@@ -195,7 +195,6 @@ const EmailSchema = new Schema<IEmail>(
     inReplyTo: String,
     threadId: {
       type: String,
-      index: true,
     },
     
     // Error tracking

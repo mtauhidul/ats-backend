@@ -43,7 +43,6 @@ const EmailAccountSchema = new Schema<IEmailAccount>(
       unique: true,
       lowercase: true,
       trim: true,
-      index: true,
     },
     provider: {
       type: String,
@@ -110,7 +109,7 @@ const EmailAccountSchema = new Schema<IEmailAccount>(
 );
 
 // Indexes
-EmailAccountSchema.index({ email: 1 });
+// Note: email already has unique index from unique: true
 EmailAccountSchema.index({ isActive: 1, autoProcessResumes: 1 });
 EmailAccountSchema.index({ lastChecked: 1 });
 

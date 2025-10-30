@@ -20,7 +20,6 @@ const CategorySchema = new Schema<ICategory>(
       required: true,
       trim: true,
       unique: true,
-      index: true,
     },
     description: {
       type: String,
@@ -60,7 +59,7 @@ const CategorySchema = new Schema<ICategory>(
 );
 
 // Indexes
-CategorySchema.index({ name: 1 });
+// Note: name already has unique index from unique: true
 CategorySchema.index({ type: 1, isActive: 1 });
 
 export const Category = mongoose.model<ICategory>('Category', CategorySchema);

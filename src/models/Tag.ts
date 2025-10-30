@@ -19,7 +19,6 @@ const TagSchema = new Schema<ITag>(
       required: true,
       trim: true,
       unique: true,
-      index: true,
     },
     description: {
       type: String,
@@ -56,7 +55,7 @@ const TagSchema = new Schema<ITag>(
 );
 
 // Indexes
-TagSchema.index({ name: 1 });
+// Note: name already has unique index from unique: true
 TagSchema.index({ type: 1, isActive: 1 });
 
 export const Tag = mongoose.model<ITag>('Tag', TagSchema);

@@ -56,7 +56,6 @@ const PipelineSchema = new Schema<IPipeline>(
       type: String,
       required: true,
       trim: true,
-      index: true,
     },
     description: {
       type: String,
@@ -72,7 +71,6 @@ const PipelineSchema = new Schema<IPipeline>(
     isDefault: {
       type: Boolean,
       default: false,
-      index: true,
     },
     isActive: {
       type: Boolean,

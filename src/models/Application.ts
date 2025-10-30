@@ -109,7 +109,6 @@ const ApplicationSchema = new Schema<IApplication>(
       required: true,
       lowercase: true,
       trim: true,
-      index: true,
     },
     phone: {
       type: String,
@@ -181,7 +180,6 @@ const ApplicationSchema = new Schema<IApplication>(
       type: String,
       enum: ['pending', 'reviewing', 'shortlisted', 'rejected', 'approved'],
       default: 'pending',
-      index: true,
     },
     source: {
       type: String,

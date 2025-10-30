@@ -124,7 +124,6 @@ const CandidateSchema = new Schema<ICandidate>(
       unique: true,
       lowercase: true,
       trim: true,
-      index: true,
     },
     phone: {
       type: String,
@@ -301,7 +300,6 @@ const CandidateSchema = new Schema<ICandidate>(
       type: String,
       enum: ['active', 'interviewing', 'offered', 'hired', 'rejected', 'withdrawn'],
       default: 'active',
-      index: true,
     },
     currentPipelineStageId: {
       type: Schema.Types.ObjectId,
@@ -351,7 +349,7 @@ const CandidateSchema = new Schema<ICandidate>(
 );
 
 // Indexes
-CandidateSchema.index({ email: 1 });
+// Note: email already has unique index from unique: true
 CandidateSchema.index({ status: 1 });
 CandidateSchema.index({ assignedTo: 1, status: 1 });
 CandidateSchema.index({ 'aiScore.overallScore': -1 });

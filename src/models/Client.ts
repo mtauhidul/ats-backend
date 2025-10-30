@@ -99,7 +99,6 @@ const ClientSchema = new Schema<IClient>(
       type: String,
       required: true,
       trim: true,
-      index: true,
     },
     email: {
       type: String,
@@ -135,7 +134,6 @@ const ClientSchema = new Schema<IClient>(
       type: String,
       enum: ['active', 'inactive', 'pending', 'on_hold'],
       default: 'active',
-      index: true,
     },
 
     // Location - Structured object
