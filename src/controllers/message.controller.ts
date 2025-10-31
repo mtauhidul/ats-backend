@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import { Message } from "../models";
 import logger from "../utils/logger";
 
@@ -15,21 +16,30 @@ export const getMessages = async (req: Request, res: Response) => {
   try {
     const userId = req.userId;
 
-    // Get all messages where user is sender or recipient
+    // Get only internal messages (not email tracking) where user is sender or recipient
     const messages = await Message.find({
       $or: [{ senderId: userId }, { recipientId: userId }],
+      conversationId: { $exists: true, $ne: null }, // Only internal messages have conversationId
+      emailId: { $exists: false }, // Exclude email tracking records
     })
       .sort({ sentAt: -1 })
+      .limit(1000) // Limit to recent messages
       .lean();
 
     // Transform _id to id for frontend compatibility
-    const transformedMessages = messages.map((msg) => ({
-      ...msg,
-      id: msg._id.toString(),
-      senderId: msg.senderId.toString(),
-      recipientId: msg.recipientId.toString(),
-      _id: undefined,
-    }));
+    const transformedMessages = messages.map((msg) => {
+      // Skip messages without required internal messaging fields
+      if (!msg.senderId || !msg.recipientId) {
+        return null;
+      }
+      return {
+        ...msg,
+        id: msg._id.toString(),
+        senderId: msg.senderId.toString(),
+        recipientId: msg.recipientId.toString(),
+        _id: undefined,
+      };
+    }).filter(Boolean);
 
     // Group messages by conversation
     const conversationsMap = new Map();
@@ -69,13 +79,21 @@ export const getMessages = async (req: Request, res: Response) => {
       const conversation = conversationsMap.get(conversationId);
       conversation.messages.push(msg);
 
-      // Count unread messages sent to current user
-      if (msg.recipientId === userId && !msg.read) {
+      // Count unread messages sent BY current user (not read by other person yet)
+      // Badge shows how many of YOUR messages are unread by THEM
+      if (msg.senderId === userId && !msg.read) {
         conversation.unreadCount++;
       }
     });
 
     const conversations = Array.from(conversationsMap.values());
+
+    // Sort messages within each conversation by sentAt ascending (oldest first)
+    conversations.forEach(conv => {
+      conv.messages.sort((a: any, b: any) =>
+        new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
+      );
+    });
 
     res.status(200).json({
       status: "success",
@@ -108,7 +126,7 @@ export const getMessageById = async (req: Request, res: Response) => {
       $or: [{ senderId: userId }, { recipientId: userId }],
     }).lean();
 
-    if (!message) {
+    if (!message || !message.senderId || !message.recipientId) {
       return res.status(404).json({
         status: "error",
         message: "Message not found",
@@ -161,17 +179,29 @@ export const sendMessage = async (req: Request, res: Response) => {
       conversationId,
     } = req.body;
 
+    // Validate required fields
+    if (!recipientId || !messageText) {
+      return res.status(400).json({
+        status: "error",
+        message: "recipientId and message are required",
+      });
+    }
+
+    // Convert string IDs to ObjectId
+    const senderObjectId = new mongoose.Types.ObjectId(userId);
+    const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
+
     // Generate or use provided conversationId
     const finalConversationId =
       conversationId || generateConversationId(userId!, recipientId);
 
     const message = await Message.create({
       conversationId: finalConversationId,
-      senderId: userId,
+      senderId: senderObjectId,
       senderName: `${user.firstName} ${user.lastName}`.trim() || user.email,
       senderRole: user.role,
       senderAvatar: user.avatar || "",
-      recipientId,
+      recipientId: recipientObjectId,
       recipientName,
       recipientRole,
       recipientAvatar: recipientAvatar || "",
@@ -182,7 +212,7 @@ export const sendMessage = async (req: Request, res: Response) => {
 
     const transformedMessage = {
       ...message.toObject(),
-      id: (message._id as any).toString(),
+      id: message._id.toString(),
       senderId: message.senderId.toString(),
       recipientId: message.recipientId.toString(),
       _id: undefined,
@@ -220,7 +250,7 @@ export const updateMessage = async (req: Request, res: Response) => {
       { new: true }
     ).lean();
 
-    if (!message) {
+    if (!message || !message.senderId || !message.recipientId) {
       return res.status(404).json({
         status: "error",
         message: "Message not found or you are not the recipient",
@@ -299,13 +329,15 @@ export const getConversationMessages = async (req: Request, res: Response) => {
       .sort({ sentAt: 1 })
       .lean();
 
-    const transformedMessages = messages.map((msg) => ({
-      ...msg,
-      id: msg._id.toString(),
-      senderId: msg.senderId.toString(),
-      recipientId: msg.recipientId.toString(),
-      _id: undefined,
-    }));
+    const transformedMessages = messages
+      .filter((msg) => msg.senderId && msg.recipientId)
+      .map((msg) => ({
+        ...msg,
+        id: msg._id.toString(),
+        senderId: msg.senderId.toString(),
+        recipientId: msg.recipientId.toString(),
+        _id: undefined,
+      }));
 
     res.status(200).json({
       status: "success",

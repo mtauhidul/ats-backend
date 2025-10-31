@@ -4,6 +4,7 @@ import { TeamMember, User, Job } from '../models';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
 import { NotFoundError, BadRequestError } from '../utils/errors';
 import logger from '../utils/logger';
+import { sendAssignmentEmail, sendTeamMemberUpdateEmail } from '../services/email.service';
 
 /**
  * Get all team members with filters and pagination
@@ -269,6 +270,35 @@ export const createTeamMember = asyncHandler(
     const populatedUser = await User.findById(userId);
     logger.info(`Team member added: ${populatedUser?.email} to job ${jobId || 'general team'} by ${req.user?.email}`);
 
+    // Send assignment email notification
+    if (populatedUser && populatedUser.email) {
+      try {
+        const assignerName = req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Administrator';
+        let entityName = 'General Team';
+        let entityType = 'team';
+        
+        if (jobId) {
+          const job = await Job.findById(jobId);
+          if (job) {
+            entityName = job.title;
+            entityType = 'job';
+          }
+        }
+        
+        await sendAssignmentEmail(
+          populatedUser.email,
+          populatedUser.firstName,
+          entityType,
+          entityName,
+          assignerName
+        );
+        logger.info(`Assignment notification email sent to ${populatedUser.email}`);
+      } catch (emailError) {
+        // Log error but don't fail the request
+        logger.error(`Failed to send assignment email to ${populatedUser.email}:`, emailError);
+      }
+    }
+
     successResponse(res, teamMember, 'Team member added successfully', 201);
   }
 );
@@ -309,6 +339,29 @@ export const updateTeamMember = asyncHandler(
         { new: true, runValidators: true }
       );
       logger.info(`Updated user ${teamMember.userId} with fields: ${Object.keys(userUpdates).join(', ')}`);
+      
+      // Send notification email about profile changes
+      const updatedUser = await User.findById(teamMember.userId);
+      if (updatedUser && updatedUser.email) {
+        try {
+          const changes = Object.keys(userUpdates).map(key => {
+            const fieldName = key.charAt(0).toUpperCase() + key.slice(1);
+            return `${fieldName} updated`;
+          });
+          
+          const updaterName = req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Administrator';
+          
+          await sendTeamMemberUpdateEmail(
+            updatedUser.email,
+            updatedUser.firstName,
+            changes,
+            updaterName
+          );
+          logger.info(`Profile update notification email sent to ${updatedUser.email}`);
+        } catch (emailError) {
+          logger.error(`Failed to send profile update email to ${updatedUser.email}:`, emailError);
+        }
+      }
     }
 
     // Prevent updating certain team member fields
@@ -332,6 +385,37 @@ export const updateTeamMember = asyncHandler(
         { new: true, runValidators: true }
       );
       logger.info(`Updated team member ${id} with fields: ${Object.keys(teamMemberUpdates).join(', ')}`);
+      
+      // Send notification email about team member changes (role/permissions)
+      const user = await User.findById(teamMember.userId);
+      if (user && user.email) {
+        try {
+          const changes = Object.keys(teamMemberUpdates).map(key => {
+            if (key === 'role') {
+              return `Role changed to ${teamMemberUpdates[key]}`;
+            } else if (key === 'isActive') {
+              return `Status changed to ${teamMemberUpdates[key] ? 'active' : 'inactive'}`;
+            } else if (key === 'permissions') {
+              return 'Permissions updated';
+            } else {
+              const fieldName = key.charAt(0).toUpperCase() + key.slice(1);
+              return `${fieldName} updated`;
+            }
+          });
+          
+          const updaterName = req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Administrator';
+          
+          await sendTeamMemberUpdateEmail(
+            user.email,
+            user.firstName,
+            changes,
+            updaterName
+          );
+          logger.info(`Team member update notification email sent to ${user.email}`);
+        } catch (emailError) {
+          logger.error(`Failed to send team member update email to ${user.email}:`, emailError);
+        }
+      }
     }
 
     // Fetch the updated team member with populated fields

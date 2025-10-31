@@ -4,7 +4,19 @@ import { config } from "./index";
 
 export async function connectDatabase(): Promise<void> {
   try {
-    await mongoose.connect(config.mongodb.uri);
+    await mongoose.connect(config.mongodb.uri, {
+      // Connection pool settings for better performance
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      socketTimeoutMS: 45000,
+      serverSelectionTimeoutMS: 10000,
+      heartbeatFrequencyMS: 10000,
+      // Retry settings
+      retryWrites: true,
+      retryReads: true,
+      // Compression
+      compressors: ['zlib'],
+    });
     logger.info("✅ MongoDB connected successfully");
   } catch (error) {
     logger.error("❌ MongoDB connection error:", error);

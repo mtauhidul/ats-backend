@@ -57,57 +57,77 @@ class IMAPService {
       });
 
       imap.once('ready', () => {
-        imap.openBox('INBOX', false, (err, _box) => {
+        logger.info('[IMAP] Connection ready, opening INBOX...');
+        
+        imap.openBox('INBOX', false, (err, box) => {
           if (err) {
             imap.end();
             return reject(new InternalServerError(`Failed to open inbox: ${err.message}`));
           }
 
+          logger.info(`[IMAP] INBOX opened successfully. Total messages: ${box.messages.total}, New: ${box.messages.new}, Unseen: ${box.messages.unseen}`);
+
           // Search for unread emails
           imap.search(['UNSEEN'], (err, results) => {
             if (err) {
+              logger.error('[IMAP] Search error:', err);
               imap.end();
               return reject(new InternalServerError(`Failed to search emails: ${err.message}`));
             }
 
+            logger.info(`[IMAP] Search completed. Found ${results?.length || 0} UNSEEN messages. UIDs: ${JSON.stringify(results)}`);
+
             if (!results || results.length === 0) {
+              logger.warn('[IMAP] No unread emails found, closing connection');
               imap.end();
               return resolve([]);
             }
 
             // Limit results
             const uids = results.slice(0, maxEmails);
+            logger.info(`[IMAP] Fetching ${uids.length} email(s)...`);
 
             const fetch = imap.fetch(uids, {
               bodies: '',
               markSeen: false, // Don't mark as read yet
             });
 
+            const parsePromises: Promise<void>[] = [];
+
             fetch.on('message', (msg) => {
               msg.on('body', (stream) => {
-                simpleParser(stream as any, async (err, parsed) => {
-                  if (err) {
-                    logger.error('Email parsing error:', err);
-                    return;
-                  }
+                const parsePromise = new Promise<void>((resolveMsg) => {
+                  simpleParser(stream as any, async (err, parsed) => {
+                    if (err) {
+                      logger.error('[IMAP] Email parsing error:', err);
+                      resolveMsg();
+                      return;
+                    }
 
-                  try {
-                    const message = this.parseEmail(parsed);
-                    messages.push(message);
-                  } catch (error) {
-                    logger.error('Error processing email:', error);
-                  }
+                    try {
+                      const message = this.parseEmail(parsed);
+                      messages.push(message);
+                      logger.info(`[IMAP] ✓ Parsed email from: ${message.from}`);
+                    } catch (error) {
+                      logger.error('[IMAP] Error processing email:', error);
+                    }
+                    resolveMsg();
+                  });
                 });
+                parsePromises.push(parsePromise);
               });
             });
 
             fetch.once('error', (err) => {
-              logger.error('Fetch error:', err);
+              logger.error('[IMAP] Fetch error:', err);
               imap.end();
               reject(new InternalServerError(`Failed to fetch emails: ${err.message}`));
             });
 
-            fetch.once('end', () => {
+            fetch.once('end', async () => {
+              logger.info('[IMAP] Fetch completed, waiting for parsing...');
+              await Promise.all(parsePromises);
+              logger.info(`[IMAP] ✓ All emails parsed. Total: ${messages.length}`);
               imap.end();
               resolve(messages);
             });
@@ -116,10 +136,11 @@ class IMAPService {
       });
 
       imap.once('error', (err: Error) => {
-        logger.error('IMAP connection error:', err);
+        logger.error('[IMAP] Connection error:', err);
         reject(new InternalServerError(`IMAP connection failed: ${err.message}`));
       });
 
+      logger.info(`[IMAP] Connecting to ${emailAccount.imapHost}:${emailAccount.imapPort} as ${emailAccount.imapUser}...`);
       imap.connect();
     });
   }

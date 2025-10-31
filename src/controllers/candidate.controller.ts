@@ -1,10 +1,11 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { Candidate, Job } from '../models';
+import { Candidate, Job, User } from '../models';
 import openaiService from '../services/openai.service';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
 import { NotFoundError, ValidationError as CustomValidationError } from '../utils/errors';
 import logger from '../utils/logger';
+import { sendAssignmentEmail } from '../services/email.service';
 import {
   CreateCandidateInput,
   UpdateCandidateInput,
@@ -277,6 +278,11 @@ export const updateCandidate = asyncHandler(
       throw new NotFoundError('Candidate not found');
     }
 
+    // Track if assignedTo is changing (accessing from req.body since it's not in the type)
+    const oldAssignedTo = candidate.assignedTo?.toString();
+    const newAssignedTo = (req.body as any).assignedTo?.toString();
+    const isAssignmentChanged = oldAssignedTo !== newAssignedTo && newAssignedTo !== undefined;
+
     // Check if email is being changed and if it creates a duplicate
     if (updates.email && updates.email !== candidate.email) {
       const existingCandidate = await Candidate.findOne({
@@ -303,6 +309,37 @@ export const updateCandidate = asyncHandler(
     ]);
 
     logger.info(`Candidate updated: ${candidate.email}`);
+
+    // Send assignment notification email if assignedTo changed
+    if (isAssignmentChanged && newAssignedTo) {
+      try {
+        const assignedUser = await User.findById(newAssignedTo);
+        if (assignedUser && assignedUser.email) {
+          const assignerName = req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Administrator';
+          const candidateName = `${candidate.firstName} ${candidate.lastName}`;
+          
+          // Get job title if available
+          const job = candidate.jobIds && candidate.jobIds.length > 0 
+            ? await Job.findById(candidate.jobIds[0])
+            : null;
+          const entityName = job 
+            ? `Candidate: ${candidateName} (${job.title})`
+            : `Candidate: ${candidateName}`;
+          
+          await sendAssignmentEmail(
+            assignedUser.email,
+            assignedUser.firstName,
+            'candidate',
+            entityName,
+            assignerName
+          );
+          logger.info(`Candidate assignment notification email sent to ${assignedUser.email}`);
+        }
+      } catch (emailError) {
+        // Log error but don't fail the request
+        logger.error(`Failed to send candidate assignment email:`, emailError);
+      }
+    }
 
     successResponse(res, candidate, 'Candidate updated successfully');
   }
@@ -675,7 +712,7 @@ export const getDashboardAnalytics = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { days = '90' } = req.query;
     const daysNum = parseInt(days as string, 10);
-    
+
     // Calculate date range
     const endDate = new Date();
     const startDate = new Date();

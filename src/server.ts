@@ -1,7 +1,8 @@
 import app from './app';
 import { config, validateConfig } from './config';
 import { connectDatabase } from './config/database';
-import { emailAutomationJob } from './jobs/emailAutomation.job';
+import emailAutomationJob from './jobs/emailAutomation.job';
+import { seedEmailTemplates } from './seeds/emailTemplates.seed';
 import logger from './utils/logger';
 
 // Validate environment variables
@@ -17,6 +18,9 @@ async function startServer() {
   try {
     // Connect to MongoDB
     await connectDatabase();
+
+    // Seed default email templates
+    await seedEmailTemplates();
 
     // Start Express server
     const server = app.listen(config.port, () => {

@@ -11,6 +11,7 @@ import {
   getEmailThread,
   getCandidateEmails,
   getEmailStats,
+  getInboundEmails,
 } from '../controllers/email.controller';
 import { emailAutomationJob } from '../jobs/emailAutomation.job';
 
@@ -36,6 +37,13 @@ router.get(
  * @access  All authenticated users
  */
 router.get('/thread/:threadId', getEmailThread);
+
+/**
+ * @route   GET /api/emails/inbound
+ * @desc    Get all inbound emails (candidate replies)
+ * @access  All authenticated users
+ */
+router.get('/inbound', getInboundEmails);
 
 /**
  * @route   GET /api/emails/candidate/:candidateId

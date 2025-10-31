@@ -17,6 +17,9 @@ export interface INotification extends Document {
   title: string;
   message: string;
   read: boolean;
+  isImportant: boolean;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  expiresAt?: Date;
   relatedEntity: {
     type: string;
     id: string;
@@ -64,6 +67,21 @@ const notificationSchema = new Schema<INotification>(
       default: false,
       index: true,
     },
+    isImportant: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    priority: {
+      type: String,
+      enum: ['low', 'medium', 'high', 'urgent'],
+      default: 'medium',
+      index: true,
+    },
+    expiresAt: {
+      type: Date,
+      required: false,
+    },
     relatedEntity: {
       type: {
         type: String,
@@ -87,5 +105,7 @@ const notificationSchema = new Schema<INotification>(
 // Indexes for efficient queries
 notificationSchema.index({ userId: 1, createdAt: -1 });
 notificationSchema.index({ userId: 1, read: 1 });
+notificationSchema.index({ userId: 1, isImportant: 1 });
+notificationSchema.index({ expiresAt: 1 });
 
 export const Notification = mongoose.model<INotification>('Notification', notificationSchema);

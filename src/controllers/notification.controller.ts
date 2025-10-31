@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { INotification, Notification } from "../models";
+import { INotification, Notification, User } from "../models";
 import logger from "../utils/logger";
 
 /**
@@ -8,6 +8,12 @@ import logger from "../utils/logger";
 export const getNotifications = async (req: Request, res: Response) => {
   try {
     const userId = req.userId;
+
+    // First, clean up any expired important notices
+    await Notification.deleteMany({
+      isImportant: true,
+      expiresAt: { $lt: new Date() },
+    });
 
     const notifications = await Notification.find({ userId })
       .sort({ createdAt: -1 })
@@ -255,5 +261,83 @@ export const markAllAsRead = async (req: Request, res: Response) => {
       message: "Failed to mark notifications as read",
       error: error.message,
     });
+  }
+};
+
+/**
+ * Broadcast important notice to all team members (Admin only)
+ */
+export const broadcastImportantNotice = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { type, title, message, priority, expiresAt } = req.body;
+
+    // Get all active users
+    const users = await User.find({ isActive: true }).select('_id');
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        status: "error",
+        message: "No active users found",
+      });
+    }
+
+    // Create notifications for all users
+    const notifications = users.map((user) => ({
+      userId: user._id,
+      type: type || 'system',
+      title,
+      message,
+      isImportant: true,
+      priority: priority || 'high',
+      expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+      read: false,
+      relatedEntity: null,
+    }));
+
+    const createdNotifications = await Notification.insertMany(notifications);
+
+    logger.info(
+      `Important notice broadcast to ${users.length} users by admin: ${title}`
+    );
+
+    res.status(201).json({
+      status: "success",
+      message: `Important notice sent to ${users.length} team members`,
+      data: {
+        count: createdNotifications.length,
+        recipients: users.length,
+      },
+    });
+  } catch (error: any) {
+    logger.error("Error broadcasting important notice:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to broadcast important notice",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Clean up expired important notices
+ * This can be called by a cron job or scheduled task
+ */
+export const cleanupExpiredNotices = async (): Promise<number> => {
+  try {
+    const result = await Notification.deleteMany({
+      isImportant: true,
+      expiresAt: { $lt: new Date() },
+    });
+
+    const deletedCount = result.deletedCount || 0;
+
+    if (deletedCount > 0) {
+      logger.info(`Cleaned up ${deletedCount} expired important notices`);
+    }
+
+    return deletedCount;
+  } catch (error: any) {
+    logger.error("Error cleaning up expired notices:", error);
+    throw error;
   }
 };

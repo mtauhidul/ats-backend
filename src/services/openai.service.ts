@@ -104,11 +104,17 @@ class OpenAIService {
   }
 
   /**
-   * Parse resume using AI
+   * Parse resume using AI with enhanced configuration
+   * Based on OLD backend's proven pattern with low temperature and JSON enforcement
    */
-  async parseResume(resumeText: string): Promise<ParsedResume> {
-    try {
-            const prompt = `
+  async parseResume(resumeText: string, maxRetries: number = 3): Promise<ParsedResume> {
+    let lastError: any;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        logger.info(`🤖 Parsing resume with OpenAI (attempt ${attempt}/${maxRetries})`);
+        
+        const prompt = `
 You are an expert ATS resume parser. Extract ALL relevant information from this resume and return as JSON.
 
 RESUME TEXT:
@@ -217,59 +223,80 @@ IMPORTANT:
 - Return ONLY valid JSON, no markdown code blocks, no extra text
 `.trim();
 
-      const response = await openai.chat.completions.create({
-        model: config.openai.model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert resume parser with 10+ years experience analyzing resumes in all formats. Extract EVERY piece of information, handle unusual formatting, parse all date formats, and be thorough. Always return valid JSON only, no markdown code blocks.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.1,
-        max_tokens: 3000,
-      });
+        const response = await openai.chat.completions.create({
+          model: config.openai.model,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert resume parser with 10+ years experience analyzing resumes in all formats. Extract EVERY piece of information, handle unusual formatting, parse all date formats, and be thorough. Always return valid JSON only, no markdown code blocks.',
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          // Enhanced configuration from OLD backend
+          temperature: 0.1, // Very low for consistency
+          top_p: 0.1,
+          frequency_penalty: 0.1,
+          presence_penalty: 0.1,
+          max_tokens: 3000,
+          response_format: { type: 'json_object' }, // Force JSON output
+        });
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No response from OpenAI');
+        const content = response.choices[0]?.message?.content;
+        if (!content) {
+          throw new Error('No response from OpenAI');
+        }
+
+        // Clean the response - remove markdown code blocks if present
+        let cleanedContent = content.trim();
+
+        // Remove markdown JSON code blocks like ```json ... ```
+        if (cleanedContent.startsWith('```')) {
+          cleanedContent = cleanedContent
+            .replace(/^```json\s*/i, '')
+            .replace(/^```\s*/, '')
+            .replace(/\s*```$/, '');
+        }
+
+        // Parse JSON response
+        const parsed = JSON.parse(cleanedContent);
+
+        // Ensure all required fields exist and add derived fields
+        const result: ParsedResume = {
+          personalInfo: parsed.personalInfo || {},
+          currentTitle: parsed.currentTitle || parsed.experience?.[0]?.title || '',
+          currentCompany: parsed.currentCompany || parsed.experience?.[0]?.company || '',
+          yearsOfExperience: parsed.yearsOfExperience || 0,
+          summary: parsed.summary || '',
+          skills: Array.isArray(parsed.skills) ? parsed.skills : [],
+          experience: Array.isArray(parsed.experience) ? parsed.experience : [],
+          education: Array.isArray(parsed.education) ? parsed.education : [],
+          certifications: Array.isArray(parsed.certifications) ? parsed.certifications : [],
+          languages: Array.isArray(parsed.languages) ? parsed.languages : [],
+          extractedText: resumeText,
+        };
+        
+        logger.info(`✅ Successfully parsed resume (attempt ${attempt})`);
+        return result;
+        
+      } catch (error: any) {
+        lastError = error;
+        logger.error(`❌ Resume parsing attempt ${attempt} failed:`, error.message);
+        
+        if (attempt < maxRetries) {
+          // Wait before retrying (exponential backoff)
+          const waitTime = Math.pow(2, attempt) * 1000;
+          logger.info(`⏳ Waiting ${waitTime}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
       }
-
-      // Clean the response - remove markdown code blocks if present
-      let cleanedContent = content.trim();
-
-      // Remove markdown JSON code blocks like ```json ... ```
-      if (cleanedContent.startsWith('```')) {
-        cleanedContent = cleanedContent
-          .replace(/^```json\s*/i, '')
-          .replace(/^```\s*/, '')
-          .replace(/\s*```$/, '');
-      }
-
-      // Parse JSON response
-      const parsed = JSON.parse(cleanedContent);
-
-      // Ensure all required fields exist and add derived fields
-      return {
-        personalInfo: parsed.personalInfo || {},
-        currentTitle: parsed.currentTitle || parsed.experience?.[0]?.title || '',
-        currentCompany: parsed.currentCompany || parsed.experience?.[0]?.company || '',
-        yearsOfExperience: parsed.yearsOfExperience || 0,
-        summary: parsed.summary || '',
-        skills: Array.isArray(parsed.skills) ? parsed.skills : [],
-        experience: Array.isArray(parsed.experience) ? parsed.experience : [],
-        education: Array.isArray(parsed.education) ? parsed.education : [],
-        certifications: Array.isArray(parsed.certifications) ? parsed.certifications : [],
-        languages: Array.isArray(parsed.languages) ? parsed.languages : [],
-        extractedText: resumeText,
-      };
-    } catch (error: any) {
-      logger.error('Resume parsing error:', error);
-      throw new InternalServerError(`Failed to parse resume: ${error.message}`);
     }
+    
+    // All retries failed
+    logger.error(`❌ All ${maxRetries} parsing attempts failed`);
+    throw new InternalServerError(`Failed to parse resume after ${maxRetries} attempts: ${lastError.message}`);
   }
 
   /**

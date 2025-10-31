@@ -17,8 +17,12 @@ export const createEmailAccount = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const data: CreateEmailAccountInput = req.body;
 
+    logger.info(`Creating email account for: ${data.email}`);
+    
     // Check if email account already exists
     const existingAccount = await EmailAccount.findOne({ email: data.email });
+    logger.info(`Existing account check result:`, existingAccount);
+    
     if (existingAccount) {
       throw new CustomValidationError('Email account already exists');
     }

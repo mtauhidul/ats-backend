@@ -14,7 +14,7 @@ import {
   validateEmail,
   TokenPayload,
 } from '../utils/auth';
-import { sendInvitationEmail, sendMagicLinkEmail, sendPasswordResetEmail } from '../services/email.service';
+import { sendInvitationEmail, sendMagicLinkEmail, sendPasswordResetEmail, sendTeamMemberUpdateEmail } from '../services/email.service';
 import { logActivity } from '../services/activity.service';
 import logger from '../utils/logger';
 
@@ -681,17 +681,54 @@ export const updateProfile = asyncHandler(
       throw new NotFoundError('User not found');
     }
 
+    // Track changes for notification
+    const changes: string[] = [];
+    
     // Update allowed fields
-    if (firstName) user.firstName = firstName;
-    if (lastName) user.lastName = lastName;
-    if (phone !== undefined) user.phone = phone;
-    if (title !== undefined) user.title = title;
-    if (department !== undefined) user.department = department;
-    if (avatar !== undefined) user.avatar = avatar;
+    if (firstName && firstName !== user.firstName) {
+      user.firstName = firstName;
+      changes.push('First name updated');
+    }
+    if (lastName && lastName !== user.lastName) {
+      user.lastName = lastName;
+      changes.push('Last name updated');
+    }
+    if (phone !== undefined && phone !== user.phone) {
+      user.phone = phone;
+      changes.push('Phone number updated');
+    }
+    if (title !== undefined && title !== user.title) {
+      user.title = title;
+      changes.push('Job title updated');
+    }
+    if (department !== undefined && department !== user.department) {
+      user.department = department;
+      changes.push('Department updated');
+    }
+    if (avatar !== undefined && avatar !== user.avatar) {
+      user.avatar = avatar;
+      changes.push('Profile picture updated');
+    }
 
     await user.save();
 
     logger.info('User profile updated', { userId });
+
+    // Send notification email if there were changes
+    if (changes.length > 0 && user.email) {
+      try {
+        await sendTeamMemberUpdateEmail(
+          user.email,
+          user.firstName,
+          changes,
+          'You (self-update)'
+        );
+        logger.info(`Profile update notification email sent to ${user.email}`);
+      } catch (emailError) {
+        // Log error but don't fail the request
+        logger.error(`Failed to send profile update email to ${user.email}:`, emailError);
+      }
+    }
 
     successResponse(res, user.toJSON(), 'Profile updated successfully');
   }

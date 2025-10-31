@@ -10,6 +10,7 @@
     "test": "jest --coverage",
     "test:watch": "jest --watch",
     "test:integration": "ts-node tests/integration-test.ts",
+    "test:email-notifications": "ts-node scripts/test-email-notifications.ts",
     "lint": "eslint src/**/*.ts",
     "seed": "ts-node scripts/seed.ts",
     "migrate": "ts-node scripts/migrate.ts"
@@ -28,6 +29,7 @@
   "dependencies": {
     "@affinda/affinda": "^7.7.0",
     "@clerk/clerk-sdk-node": "^5.0.0",
+    "@react-email/components": "^0.5.7",
     "@types/sharp": "^0.31.1",
     "axios": "^1.6.2",
     "bcryptjs": "^2.4.3",
@@ -49,7 +51,12 @@
     "node-cron": "^3.0.3",
     "openai": "^4.20.0",
     "pdf-parse": "^1.1.1",
-    "resend": "^6.3.0",
+    "pdf2json": "^4.0.0",
+    "pdfjs-dist": "^5.4.296",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-email": "^4.3.2",
+    "resend": "^6.4.0-canary.0",
     "winston": "^3.11.0",
     "zod": "^3.22.4"
   },
@@ -67,6 +74,8 @@
     "@types/node": "^20.10.4",
     "@types/node-cron": "^3.0.11",
     "@types/pdf-parse": "^1.1.5",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
     "@types/supertest": "^6.0.2",
     "@typescript-eslint/eslint-plugin": "^6.14.0",
     "@typescript-eslint/parser": "^6.14.0",

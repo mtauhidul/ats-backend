@@ -1,8 +1,10 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { User, Candidate, TeamMember } from '../models';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
 import { NotFoundError, BadRequestError } from '../utils/errors';
 import logger from '../utils/logger';
+import { sendTeamMemberUpdateEmail } from '../services/email.service';
 
 /**
  * Get all users with pagination and filters
@@ -80,6 +82,16 @@ export const getUserById = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
+    // Validate ID parameter
+    if (!id || id === 'undefined' || id === 'null') {
+      throw new BadRequestError('User ID is required');
+    }
+
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new BadRequestError('Invalid User ID format');
+    }
+
     const user = await User.findById(id).select('-__v');
 
     if (!user) {
@@ -110,6 +122,16 @@ export const updateUser = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
     const updates = req.body;
+
+    // Validate ID parameter
+    if (!id || id === 'undefined' || id === 'null') {
+      throw new BadRequestError('User ID is required');
+    }
+
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new BadRequestError('Invalid User ID format');
+    }
 
     // Prevent updating sensitive fields
     delete updates.clerkId;
@@ -142,6 +164,37 @@ export const updateUser = asyncHandler(
 
     logger.info(`User updated: ${user.email} by ${req.user?.email}`);
 
+    // Send notification email about profile/role changes
+    if (user.email) {
+      try {
+        const changes = Object.keys(updates).map(key => {
+          if (key === 'role') {
+            return `Role changed to ${updates[key]}`;
+          } else if (key === 'isActive') {
+            return `Status changed to ${updates[key] ? 'active' : 'inactive'}`;
+          } else if (key === 'permissions') {
+            return 'Permissions updated';
+          } else {
+            const fieldName = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1');
+            return `${fieldName} updated`;
+          }
+        });
+        
+        const updaterName = req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Administrator';
+        
+        await sendTeamMemberUpdateEmail(
+          user.email,
+          user.firstName,
+          changes,
+          updaterName
+        );
+        logger.info(`User update notification email sent to ${user.email}`);
+      } catch (emailError) {
+        // Log error but don't fail the request
+        logger.error(`Failed to send user update email to ${user.email}:`, emailError);
+      }
+    }
+
     successResponse(res, user, 'User updated successfully');
   }
 );
@@ -152,6 +205,16 @@ export const updateUser = asyncHandler(
 export const deleteUser = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
+
+    // Validate ID parameter
+    if (!id || id === 'undefined' || id === 'null') {
+      throw new BadRequestError('User ID is required');
+    }
+
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new BadRequestError('Invalid User ID format');
+    }
 
     const user = await User.findById(id);
 

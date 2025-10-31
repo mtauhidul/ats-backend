@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview Invitation</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .greeting {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        .interview-details {
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+            padding: 20px;
+            margin: 25px 0;
+            border-radius: 5px;
+        }
+        .detail-row {
+            display: flex;
+            margin-bottom: 12px;
+            align-items: center;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+            min-width: 120px;
+            margin-right: 10px;
+        }
+        .detail-value {
+            color: #212529;
+            flex: 1;
+        }
+        .zoom-section {
+            background: linear-gradient(135deg, #4285f4 0%, #34a853 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 8px;
+            margin: 25px 0;
+            text-align: center;
+        }
+        .zoom-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        .join-button {
+            display: inline-block;
+            background-color: #ffffff;
+            color: #4285f4;
+            text-decoration: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 16px;
+            margin: 10px 0;
+            transition: transform 0.2s ease;
+        }
+        .join-button:hover {
+            transform: translateY(-2px);
+            text-decoration: none;
+            color: #4285f4;
+        }
+        .meeting-info {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        .meeting-info p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        .instructions {
+            background-color: #e3f2fd;
+            border: 1px solid #bbdefb;
+            border-radius: 5px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .instructions h3 {
+            color: #1565c0;
+            margin-top: 0;
+            font-size: 16px;
+        }
+        .instructions ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .instructions li {
+            margin-bottom: 8px;
+            color: #424242;
+        }
+        .contact-info {
+            border-top: 2px solid #e9ecef;
+            padding-top: 25px;
+            margin-top: 30px;
+        }
+        .contact-info h3 {
+            color: #495057;
+            margin-bottom: 15px;
+        }
+        .footer {
+            background-color: #6c757d;
+            color: white;
+            padding: 20px 30px;
+            text-align: center;
+            font-size: 14px;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+        .company-logo {
+            margin-bottom: 10px;
+        }
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            .content {
+                padding: 30px 20px;
+            }
+            .detail-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .detail-label {
+                min-width: auto;
+                margin-bottom: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="company-logo">
+                <h1>{{companyName}}</h1>
+            </div>
+            <h1>Interview Invitation</h1>
+        </div>
+
+        <div class="content">
+            <div class="greeting">
+                Dear {{candidateName}},
+            </div>
+
+            <p>We are pleased to invite you for an interview for the position of <strong>{{jobTitle}}</strong>. We were impressed with your application and would like to learn more about your qualifications and experience.</p>
+
+            <div class="interview-details">
+                <h3 style="margin-top: 0; color: #495057; margin-bottom: 20px;">📅 Interview Details</h3>
+                
+                <div class="detail-row">
+                    <span class="detail-label">📍 Position:</span>
+                    <span class="detail-value">{{jobTitle}}</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="detail-label">🕐 Date & Time:</span>
+                    <span class="detail-value">{{interviewDate}} at {{interviewTime}}</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="detail-label">⏱️ Duration:</span>
+                    <span class="detail-value">{{duration}} minutes</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="detail-label">👥 Interviewer(s):</span>
+                    <span class="detail-value">{{interviewerName}}</span>
+                </div>
+            </div>
+
+            <div class="zoom-section">
+                <div class="zoom-title">🎥 Join via Zoom</div>
+                <p>Click the button below to join the meeting at the scheduled time:</p>
+                
+                <a href="{{zoomJoinUrl}}" class="join-button">
+                    Join Zoom Meeting
+                </a>
+
+                <div class="meeting-info">
+                    <p><strong>Meeting ID:</strong> {{zoomMeetingId}}</p>
+                    <p><strong>Passcode:</strong> {{zoomPasscode}}</p>
+                    <p><strong>Phone:</strong> {{zoomDialIn}}</p>
+                </div>
+            </div>
+
+            <div class="instructions">
+                <h3>📋 Before the Interview</h3>
+                <ul>
+                    <li><strong>Test your technology:</strong> Please test your camera, microphone, and internet connection before the interview</li>
+                    <li><strong>Find a quiet space:</strong> Choose a quiet location with good lighting for the video call</li>
+                    <li><strong>Have documents ready:</strong> Keep a copy of your resume and any relevant portfolio items accessible</li>
+                    <li><strong>Join 5 minutes early:</strong> Please join the meeting 5 minutes before the scheduled time</li>
+                    <li><strong>Prepare questions:</strong> Come prepared with questions about the role and our company</li>
+                </ul>
+            </div>
+
+            <div class="instructions">
+                <h3>🔧 Technical Requirements</h3>
+                <ul>
+                    <li>Stable internet connection</li>
+                    <li>Computer/laptop with camera and microphone</li>
+                    <li>Latest version of Zoom (download from <a href="https://zoom.us/download" style="color: #007bff;">zoom.us/download</a>)</li>
+                    <li>Backup phone number in case of technical issues</li>
+                </ul>
+            </div>
+
+            <p>We are excited to meet with you and discuss how your skills and experience align with our team. If you have any questions or need to reschedule, please don't hesitate to contact us.</p>
+
+            <div class="contact-info">
+                <h3>📞 Contact Information</h3>
+                <p><strong>Recruiter:</strong> {{recruiterName}}</p>
+                <p><strong>Email:</strong> {{recruiterEmail}}</p>
+                <p><strong>Phone:</strong> {{recruiterPhone}}</p>
+            </div>
+
+            <p style="margin-top: 30px;">Best regards,<br>
+            <strong>{{recruiterName}}</strong><br>
+            {{recruiterTitle}}<br>
+            {{companyName}}</p>
+        </div>
+
+        <div class="footer">
+            <p>&copy; {{currentYear}} {{companyName}}. All rights reserved.</p>
+            <p>This is an automated message from our ATS system.</p>
+        </div>
+    </div>
+</body>
+</html>

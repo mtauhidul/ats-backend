@@ -1,37 +1,59 @@
 import cron from 'node-cron';
-import { EmailAccount, Application, Job } from '../models';
+import { EmailAccount, Job, Application } from '../models';
 import imapService from '../services/imap.service';
-import openaiService from '../services/openai.service';
-import cloudinaryService from '../services/cloudinary.service';
+import { createApplicationWithParsing } from '../services/application.service';
+import { parseResumeWithFallback } from '../services/enhancedResumeParser.service';
+import {
+  uploadVideoToCloudinary,
+  validateVideoSize,
+  extractVideoAttachments
+} from '../utils/videoHandler';
 import logger from '../utils/logger';
 import { config } from '../config';
 
 /**
  * Email Automation Cron Job
  * 
- * Monitors email accounts for new job applications with resume attachments.
- * Runs every 15 minutes (configurable via EMAIL_CHECK_INTERVAL env var).
+ * Simplified workflow aligned with manual import:
+ * 1. Collects emails with resumes and video introductions
+ * 2. Uploads files to Cloudinary
+ * 3. Creates application (same as manual import)
+ * 4. Application creation handles: AI validation, duplicate check, parsing
  * 
- * Process:
- * 1. Fetch all active email accounts
- * 2. For each account, check for unread emails
- * 3. Extract resume attachments (PDF, DOC, DOCX)
- * 4. Parse resumes using OpenAI
- * 5. Create Application with source='email_automation'
- * 6. Mark email as read
- * 7. Update lastChecked timestamp
+ * Features:
+ * ✅ Text extraction for AI validation (pdf-parse → pdf2json fallback)
+ * ✅ Video attachment support (mp4, mov, avi, webm, etc.)
+ * ✅ Batch processing (5 emails at a time)
+ * ✅ Duplicate check BEFORE processing
+ * ✅ Invoice/receipt filtering
+ * ✅ Comprehensive error handling
+ * ✅ Uses same application creation flow as manual import
+ * ✅ Stats tracking and monitoring
  */
 
 class EmailAutomationJob {
   private isRunning = false;
   private cronJob: cron.ScheduledTask | null = null;
-  private isEnabled = true; // Can be controlled from admin panel
+  private isEnabled = true;
+  
+  // Stats tracking
+  private stats = {
+    totalEmailsProcessed: 0,
+    totalCandidatesCreated: 0,
+    totalErrors: 0,
+    lastRunAt: null as Date | null,
+    lastRunDuration: 0,
+  };
+
+  // Batch processing config
+  private readonly BATCH_SIZE = 5; // Process 5 emails at a time
+  private readonly BATCH_DELAY = 2000; // 2 seconds between batches
+  private readonly EMAIL_TIMEOUT = 60000; // 60 seconds per email
 
   /**
    * Start the cron job
    */
   start(): void {
-    // Get interval from env (default: every 15 minutes)
     const interval = config.email.checkInterval || '*/15 * * * *';
 
     this.cronJob = cron.schedule(interval, async () => {
@@ -51,7 +73,7 @@ class EmailAutomationJob {
           logger.error('Initial email processing failed:', err);
         });
       }
-    }, 5000); // Wait 5 seconds after startup
+    }, 5000);
   }
 
   /**
@@ -81,317 +103,366 @@ class EmailAutomationJob {
   }
 
   /**
-   * Get automation status
+   * Get stats
    */
-  getStatus(): { enabled: boolean; running: boolean } {
-    return {
-      enabled: this.isEnabled,
-      running: this.isRunning,
-    };
+  getStats() {
+    return { ...this.stats };
   }
 
   /**
-   * Process emails from all active accounts
+   * Check if a candidate already exists with this email
+   */
+  private async isDuplicate(email: string): Promise<boolean> {
+    try {
+      if (!email) return false;
+      
+      const existing = await Application.findOne({ 
+        email: email.toLowerCase().trim() 
+      });
+      return !!existing;
+    } catch (error: any) {
+      logger.error('Error checking duplicate:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Process a single email with timeout protection
+   */
+  private async processEmailWithTimeout(
+    email: any,
+    account: any,
+    job: any
+  ): Promise<void> {
+    return new Promise(async (resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`Email processing timeout after ${this.EMAIL_TIMEOUT}ms`));
+      }, this.EMAIL_TIMEOUT);
+
+      try {
+        await this.processSingleEmail(email, account, job);
+        clearTimeout(timeout);
+        resolve();
+      } catch (error) {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Process a single email
+   */
+  private async processSingleEmail(
+    email: any,
+    account: any,
+    job: any
+  ): Promise<void> {
+    // Handle both ParsedMail format (from.value[0].address) and EmailMessage format (from as string)
+    let fromEmail: string | undefined;
+    let fromName: string = 'Unknown';
+    
+    if (typeof email.from === 'string') {
+      // IMAP service format: "Name <email@example.com>" or just "email@example.com"
+      const emailMatch = email.from.match(/<([^>]+)>/) || email.from.match(/([^\s<>]+@[^\s<>]+)/);
+      fromEmail = emailMatch ? emailMatch[1] : undefined;
+      const nameMatch = email.from.match(/^"?([^"<]+)"?\s*</);
+      fromName = nameMatch ? nameMatch[1].trim() : (fromEmail ? fromEmail.split('@')[0] : 'Unknown');
+    } else if (email.from?.value?.[0]) {
+      // mailparser format
+      fromEmail = email.from.value[0].address;
+      fromName = email.from.value[0].name || 'Unknown';
+    }
+    
+    const subject = email.subject || 'No Subject';
+    
+    logger.info(`\n${'='.repeat(80)}`);
+    logger.info(`📧 Processing email from: ${fromName} <${fromEmail || 'no-email'}>`);
+    logger.info(`   Subject: ${subject}`);
+    logger.info(`   Attachments: ${email.attachments?.length || 0}`);
+    
+    // Skip if no sender email
+    if (!fromEmail) {
+      logger.warn(`⏭️ SKIPPING: No sender email address`);
+      this.stats.totalEmailsProcessed++;
+      return;
+    }
+    
+    // Check for duplicate BEFORE processing attachments
+    if (await this.isDuplicate(fromEmail)) {
+      logger.warn(`⏭️ SKIPPING: Application already exists for ${fromEmail}`);
+      this.stats.totalEmailsProcessed++;
+      return;
+    }
+
+    if (!email.attachments || email.attachments.length === 0) {
+      logger.info('⏭️ No attachments, skipping');
+      this.stats.totalEmailsProcessed++;
+      return;
+    }
+
+    // Filter out invoice/receipt files
+    const nonInvoiceAttachments = email.attachments.filter((att: any) => {
+      const filename = att.filename.toLowerCase();
+      const isInvoice = /invoice|receipt|statement|bill|order|confirmation/i.test(filename);
+      if (isInvoice) {
+        logger.info(`⏭️ Skipping invoice/receipt file: ${att.filename}`);
+      }
+      return !isInvoice;
+    });
+
+    if (nonInvoiceAttachments.length === 0) {
+      logger.info('⏭️ No resume attachments, only invoices/receipts');
+      this.stats.totalEmailsProcessed++;
+      return;
+    }
+
+    // Separate resume and video attachments
+    const resumeAttachments = nonInvoiceAttachments.filter((att: any) => {
+      const filename = att.filename.toLowerCase();
+      return filename.endsWith('.pdf') || 
+             filename.endsWith('.doc') || 
+             filename.endsWith('.docx');
+    });
+
+    const videoAttachmentsData = extractVideoAttachments(nonInvoiceAttachments);
+
+    logger.info(`   📄 Resume files: ${resumeAttachments.length}`);
+    logger.info(`   🎥 Video files: ${videoAttachmentsData.length}`);
+
+    if (resumeAttachments.length === 0) {
+      logger.info('⏭️ No resume attachments found');
+      this.stats.totalEmailsProcessed++;
+      return;
+    }
+
+    // Process the first resume attachment
+    const attachment = resumeAttachments[0];
+    logger.info(`\n📋 Processing resume: ${attachment.filename}`);
+
+    try {
+      // Step 1: Extract resume text for AI validation
+      logger.info(`Step 1: Extracting resume text for AI validation...`);
+      const { text: resumeText, method } = await parseResumeWithFallback(
+        attachment.content,
+        attachment.filename
+      );
+      logger.info(`✅ Step 1: Extracted ${resumeText.length} characters using ${method}`);
+
+      // Step 2: Upload video if present
+      let videoUrl: string | undefined;
+      if (videoAttachmentsData.length > 0) {
+        logger.info(`Step 2: Processing video attachments...`);
+        
+        for (const videoData of videoAttachmentsData) {
+          try {
+            // Validate video size
+            const sizeValidation = validateVideoSize(videoData.attachment.content);
+            if (!sizeValidation.valid) {
+              logger.warn(`⚠️ Skipping video ${videoData.attachment.filename}: ${sizeValidation.error}`);
+              continue;
+            }
+
+            logger.info(`   📹 Uploading ${videoData.attachment.filename} (${sizeValidation.sizeMB}MB, ${videoData.category})`);
+            const videoUpload = await uploadVideoToCloudinary(
+              videoData.attachment.content,
+              videoData.attachment.filename
+            );
+
+            // Use the first video introduction as videoIntroUrl
+            if (videoData.category === 'introduction' && !videoUrl) {
+              videoUrl = videoUpload.url;
+              logger.info(`✅ Step 2: Video intro uploaded to ${videoUrl}`);
+            } else {
+              logger.info(`✅ Video uploaded: ${videoUpload.url}`);
+            }
+          } catch (videoError: any) {
+            logger.error(`❌ Video upload failed:`, videoError.message);
+            // Don't fail the entire process if video upload fails
+          }
+        }
+      }
+
+      // Step 3: Create application using Direct Apply service
+      // This handles: parsing (Affinda/OpenAI), Cloudinary upload, AI validation, duplicate check
+      logger.info(`Step 3: Creating application with Direct Apply service...`);
+      
+      // Split name into first and last
+      const nameParts = fromName.split(' ');
+      const firstName = nameParts[0] || 'Unknown';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      const application = await createApplicationWithParsing({
+        // Resume file
+        resumeBuffer: attachment.content,
+        resumeFilename: attachment.filename,
+        resumeMimetype: attachment.contentType || 'application/pdf',
+        
+        // Candidate info from email (will be overwritten by parsed data if available)
+        email: fromEmail,
+        firstName,
+        lastName,
+        
+        // Pre-extracted text for AI validation
+        resumeRawText: resumeText,
+        
+        // Video (if present)
+        videoIntroUrl: videoUrl,
+        
+        // Job association (if found)
+        jobId: job?._id,
+        clientId: job?.clientId,
+        
+        // Source tracking
+        source: 'email_automation',
+        sourceEmailAccountId: account._id,
+      });
+
+      this.stats.totalCandidatesCreated++;
+      this.stats.totalEmailsProcessed++;
+
+      const jobInfo = job ? `for ${job.title}` : '(unassigned)';
+      logger.info(`\n✅ COMPLETE: Application created for ${application.firstName} ${application.lastName} ${jobInfo}`);
+      logger.info(`   Application ID: ${application._id}`);
+      logger.info(`   Email: ${application.email}`);
+      logger.info(`   Resume: ${application.resumeUrl}`);
+      if (videoUrl) {
+        logger.info(`   Video: ${videoUrl}`);
+      }
+      if (application.isValidResume !== null) {
+        logger.info(`   AI Validation: ${application.isValidResume ? '✓ VALID' : '✗ INVALID'} (${application.validationScore}/100)`);
+        logger.info(`   Reason: ${application.validationReason}`);
+      }
+      if (application.parsedData) {
+        logger.info(`   Parsed: ${application.parsedData.skills?.length || 0} skills, ${application.parsedData.experience?.length || 0} experiences`);
+      }
+
+    } catch (error: any) {
+      this.stats.totalErrors++;
+      logger.error(`\n❌ FAILED: Error processing email from ${fromEmail}:`, {
+        error: error.message,
+        stack: error.stack,
+        fromEmail,
+        subject,
+        filename: attachment.filename
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Main email processing function with batch processing
    */
   async processEmails(): Promise<void> {
-    // Prevent concurrent runs
     if (this.isRunning) {
-      logger.warn('Email automation job already running, skipping this cycle');
+      logger.warn('⚠️ Email automation is already running, skipping this cycle');
       return;
     }
 
     this.isRunning = true;
     const startTime = Date.now();
+    this.stats.lastRunAt = new Date();
+
+    logger.info('\n' + '='.repeat(80));
+    logger.info('🚀 EMAIL AUTOMATION CYCLE STARTED');
+    logger.info('='.repeat(80));
 
     try {
-      logger.info('🔄 Starting email automation cycle...');
+      // Fetch active email accounts
+      const accounts = await EmailAccount.find({ isActive: true });
+      logger.info(`📊 Found ${accounts.length} active email account(s)`);
 
-      // Fetch all active email accounts
-      const emailAccounts = await EmailAccount.find({ isActive: true });
-
-      if (emailAccounts.length === 0) {
-        logger.info('No active email accounts found');
+      if (accounts.length === 0) {
+        logger.info('⏭️ No active email accounts configured');
         return;
       }
 
-      logger.info(`Found ${emailAccounts.length} active email account(s)`);
-
-      let totalProcessed = 0;
-      let totalCreated = 0;
-      let totalErrors = 0;
-
       // Process each account
-      for (const account of emailAccounts) {
+      for (const account of accounts) {
+        logger.info(`\n📬 Checking account: ${account.email}`);
+
         try {
-          const result = await this.processAccount(account);
-          totalProcessed += result.processed;
-          totalCreated += result.created;
-          totalErrors += result.errors;
+          // Step 1: Fetch unread emails
+          const emails = await imapService.fetchUnreadEmails(account);
+          logger.info(`   Found ${emails.length} unread email(s)`);
+
+          if (emails.length === 0) {
+            // Update lastChecked
+            account.lastChecked = new Date();
+            await account.save();
+            continue;
+          }
+
+          // Find active job for this email account
+          const job = await Job.findOne({
+            isActive: true,
+            emailAccountId: account._id,
+          });
+
+          if (job) {
+            logger.info(`   📋 Associated with job: ${job.title}`);
+          } else {
+            logger.info(`   ⚠️ No active job associated, applications will be unassigned`);
+          }
+
+          // Step 2: Process emails in batches
+          for (let i = 0; i < emails.length; i += this.BATCH_SIZE) {
+            const batch = emails.slice(i, i + this.BATCH_SIZE);
+            const batchNum = Math.floor(i / this.BATCH_SIZE) + 1;
+            const totalBatches = Math.ceil(emails.length / this.BATCH_SIZE);
+
+            logger.info(`\n📦 Processing batch ${batchNum}/${totalBatches} (${batch.length} emails)`);
+
+            // Process batch concurrently with timeout protection
+            const results = await Promise.allSettled(
+              batch.map(email => this.processEmailWithTimeout(email, account, job))
+            );
+
+            // Log batch results
+            const successful = results.filter(r => r.status === 'fulfilled').length;
+            const failed = results.filter(r => r.status === 'rejected').length;
+            logger.info(`   ✅ Successful: ${successful}, ❌ Failed: ${failed}`);
+
+            // Wait between batches
+            if (i + this.BATCH_SIZE < emails.length) {
+              logger.info(`   ⏳ Waiting ${this.BATCH_DELAY}ms before next batch...`);
+              await new Promise(resolve => setTimeout(resolve, this.BATCH_DELAY));
+            }
+          }
+
+          // Update lastChecked
+          account.lastChecked = new Date();
+          await account.save();
+          logger.info(`   ✅ Updated lastChecked for ${account.email}`);
+
         } catch (error: any) {
-          logger.error(`Failed to process account ${account.email}:`, error.message);
-          totalErrors++;
+          logger.error(`❌ Error processing account ${account.email}:`, error);
+          this.stats.totalErrors++;
         }
       }
 
-      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-      logger.info(
-        `✅ Email automation cycle completed in ${duration}s - ` +
-        `Processed: ${totalProcessed}, Created: ${totalCreated}, Errors: ${totalErrors}`
-      );
+      const duration = Date.now() - startTime;
+      this.stats.lastRunDuration = duration;
+
+      logger.info('\n' + '='.repeat(80));
+      logger.info('🏁 EMAIL AUTOMATION CYCLE COMPLETED');
+      logger.info('='.repeat(80));
+      logger.info(`📊 Stats:`);
+      logger.info(`   Duration: ${(duration / 1000).toFixed(2)}s`);
+      logger.info(`   Emails processed: ${this.stats.totalEmailsProcessed}`);
+      logger.info(`   Candidates created: ${this.stats.totalCandidatesCreated}`);
+      logger.info(`   Errors: ${this.stats.totalErrors}`);
+      logger.info('='.repeat(80) + '\n');
+
     } catch (error: any) {
-      logger.error('Email automation cycle failed:', error.message);
+      logger.error('❌ Email automation cycle failed:', error);
+      this.stats.totalErrors++;
     } finally {
       this.isRunning = false;
     }
   }
-
-  /**
-   * Process emails from a single account
-   */
-  private async processAccount(account: any): Promise<{
-    processed: number;
-    created: number;
-    errors: number;
-  }> {
-    const stats = { processed: 0, created: 0, errors: 0 };
-
-    try {
-      logger.info(`Processing account: ${account.email}`);
-
-      // Fetch unread emails with attachments
-      const emails = await imapService.fetchUnreadEmails(
-        account.email,
-        account.imapConfig
-      );
-
-      if (emails.length === 0) {
-        logger.info(`No unread emails in ${account.email}`);
-        account.lastChecked = new Date();
-        await account.save();
-        return stats;
-      }
-
-      logger.info(`Found ${emails.length} unread email(s) in ${account.email}`);
-
-      // Process each email
-      for (const email of emails) {
-        try {
-          stats.processed++;
-          
-          // Check for resume attachments
-          const resumeAttachments = email.attachments?.filter((att: any) =>
-            /\.(pdf|doc|docx)$/i.test(att.filename)
-          );
-
-          if (!resumeAttachments || resumeAttachments.length === 0) {
-            logger.info(`No resume attachments in email from ${email.from}`);
-            continue;
-          }
-
-          // Check for video attachments
-          const videoAttachments = email.attachments?.filter((att: any) =>
-            /\.(mp4|mov|avi|webm|mkv)$/i.test(att.filename)
-          );
-
-          // Process first resume attachment
-          const attachment = resumeAttachments[0];
-          logger.info(`Processing resume: ${attachment.filename} from ${email.from}`);
-
-          // Parse resume with OpenAI
-          const parsedResume = await openaiService.parseResumeFromFile(
-            attachment.content,
-            attachment.filename
-          );
-
-          // AI Validation (only for email automation)
-          // Create a validation text from parsed data
-          const validationText = `
-Name: ${parsedResume.personalInfo?.firstName} ${parsedResume.personalInfo?.lastName}
-Email: ${parsedResume.personalInfo?.email}
-Phone: ${parsedResume.personalInfo?.phone}
-Summary: ${parsedResume.summary || 'N/A'}
-Skills: ${parsedResume.skills?.join(', ') || 'N/A'}
-Experience: ${parsedResume.experience?.map(exp => `${exp.title} at ${exp.company}`).join('; ') || 'N/A'}
-Education: ${parsedResume.education?.map(edu => `${edu.degree} from ${edu.institution}`).join('; ') || 'N/A'}
-          `.trim();
-
-          const validation = await openaiService.validateResume(validationText);
-
-          logger.info(
-            `Resume validation: ${validation.isValid ? '✅ Valid' : '⚠️ Needs Review'} ` +
-            `(Score: ${validation.score}/100) - ${validation.reason}`
-          );
-
-          // Note: We don't auto-reject invalid resumes anymore
-          // Instead, we store them with AI recommendation for admin review
-
-          // Upload resume to Cloudinary
-          const uploadResult = await cloudinaryService.uploadResume(
-            attachment.content,
-            attachment.filename
-          );
-
-          // Upload video if present
-          let videoIntroUrl: string | undefined = undefined;
-          if (videoAttachments && videoAttachments.length > 0) {
-            const videoAttachment = videoAttachments[0];
-            logger.info(`Processing video: ${videoAttachment.filename} from ${email.from}`);
-            
-            try {
-              const videoUploadResult = await cloudinaryService.uploadVideo(
-                videoAttachment.content,
-                videoAttachment.filename
-              );
-              videoIntroUrl = videoUploadResult.url;
-              logger.info(`✅ Video uploaded successfully`);
-            } catch (videoError: any) {
-              logger.error(`Failed to upload video: ${videoError.message}`);
-              // Continue without video
-            }
-          }
-
-          // Extract personal info from parsed data
-          const { firstName, lastName, email: candidateEmail, phone } = 
-            parsedResume.personalInfo || {};
-
-          if (!firstName || !lastName || !candidateEmail) {
-            logger.warn(`Incomplete personal info in resume from ${email.from}, skipping`);
-            continue;
-          }
-
-          // Try to match to a job (you can customize this logic)
-          // For now, find the first active job or use email subject/body to determine
-          const job = await this.findJobForEmail(email);
-
-          if (!job) {
-            logger.warn(`No matching job found for email from ${email.from}, skipping`);
-            continue;
-          }
-
-          // Check for duplicate application
-          const existingApplication = await Application.findOne({
-            jobId: job._id,
-            email: candidateEmail,
-          });
-
-          if (existingApplication) {
-            logger.info(`Duplicate application from ${candidateEmail} for job ${job.title}, skipping`);
-            continue;
-          }
-
-          // Create application
-          await Application.create({
-            jobId: job._id,
-            clientId: job.clientId,
-            firstName,
-            lastName,
-            email: candidateEmail,
-            phone: phone || email.from,
-            resumeUrl: uploadResult.url,
-            resumeOriginalName: attachment.filename,
-            videoIntroUrl, // Include video if uploaded
-            parsedData: {
-              summary: parsedResume.summary,
-              skills: parsedResume.skills,
-              experience: parsedResume.experience,
-              education: parsedResume.education,
-              certifications: parsedResume.certifications,
-              languages: parsedResume.languages,
-            },
-            // AI validation results (only for email automation)
-            isValidResume: validation.isValid,
-            validationScore: validation.score,
-            validationReason: validation.reason,
-            status: 'pending',
-            source: 'email_automation',
-            sourceEmail: email.from,
-            sourceEmailAccountId: account._id,
-            notes: `Auto-imported from email: ${email.subject || 'No subject'}`,
-          });
-
-          stats.created++;
-          logger.info(`✅ Created application for ${candidateEmail} - Job: ${job.title}`);
-
-          // Mark email as read (optional - implement in IMAP service if needed)
-          // await imapService.markAsRead(account, email.uid);
-
-        } catch (error: any) {
-          stats.errors++;
-          logger.error(`Error processing email from ${email.from}:`, error.message);
-        }
-      }
-
-      // Update lastChecked timestamp
-      account.lastChecked = new Date();
-      await account.save();
-
-      logger.info(
-        `Account ${account.email} processed - ` +
-        `Created: ${stats.created}, Errors: ${stats.errors}`
-      );
-
-    } catch (error: any) {
-      logger.error(`Failed to process account ${account.email}:`, error.message);
-      throw error;
-    }
-
-    return stats;
-  }
-
-  /**
-   * Find a matching job for the email
-   * This is a simple implementation - you can enhance with:
-   * - Email subject parsing (e.g., "Application for Software Engineer")
-   * - Email body analysis
-   * - Dedicated email addresses per job (e.g., jobs+software-engineer@company.com)
-   */
-  private async findJobForEmail(email: any): Promise<any> {
-    // Strategy 1: Parse job title from email subject
-    if (email.subject) {
-      // Common patterns: "Application for [Job Title]", "RE: [Job Title]"
-      const patterns = [
-        /application for[:\s]+(.+)/i,
-        /applying for[:\s]+(.+)/i,
-        /re:[:\s]+(.+)/i,
-        /job application[:\s]+(.+)/i,
-      ];
-
-      for (const pattern of patterns) {
-        const match = email.subject.match(pattern);
-        if (match) {
-          const jobTitle = match[1].trim();
-          const job = await Job.findOne({
-            title: { $regex: jobTitle, $options: 'i' },
-            status: 'active',
-          });
-          if (job) {
-            logger.info(`Matched job from subject: ${job.title}`);
-            return job;
-          }
-        }
-      }
-    }
-
-    // Strategy 2: Find the most recent active job (fallback)
-    const job = await Job.findOne({ status: 'active' })
-      .sort({ createdAt: -1 })
-      .limit(1);
-
-    if (job) {
-      logger.info(`Using most recent active job: ${job.title}`);
-    }
-
-    return job;
-  }
-
-  /**
-   * Manually trigger email processing (for testing)
-   */
-  async triggerManual(): Promise<void> {
-    logger.info('📧 Manually triggering email automation...');
-    await this.processEmails();
-  }
 }
 
 // Export singleton instance
-export const emailAutomationJob = new EmailAutomationJob();
+const emailAutomationJob = new EmailAutomationJob();
+export default emailAutomationJob;

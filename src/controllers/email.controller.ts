@@ -306,6 +306,79 @@ export const getCandidateEmails = asyncHandler(
 );
 
 /**
+ * Get inbound emails (candidate replies)
+ */
+export const getInboundEmails = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const {
+      page = 1,
+      limit = 20,
+      candidateId,
+      status = "received",
+      unmatched,
+      search,
+    } = req.query as any;
+
+    // Build filter for inbound emails
+    const filter: any = { direction: "inbound" };
+
+    if (candidateId) {
+      filter.candidateId = candidateId;
+    }
+
+    if (status) {
+      filter.status = status;
+    }
+
+    // Filter for unmatched emails (emails from unknown senders)
+    if (unmatched === "true") {
+      filter.candidateId = { $exists: false };
+    }
+
+    if (search) {
+      filter.$or = [
+        { from: { $regex: search, $options: "i" } },
+        { subject: { $regex: search, $options: "i" } },
+        { body: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // Get total count
+    const totalCount = await Email.countDocuments(filter);
+
+    // Calculate pagination
+    const pagination = paginateResults(totalCount, {
+      page,
+      limit,
+      sort: "receivedAt",
+      order: "desc",
+    });
+
+    // Calculate skip
+    const skip = (page - 1) * limit;
+
+    // Fetch inbound emails
+    const emails = await Email.find(filter)
+      .populate("candidateId", "firstName lastName email phone")
+      .populate("applicationId", "status")
+      .populate("jobId", "title")
+      .populate("interviewId", "scheduledAt type")
+      .sort({ receivedAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    successResponse(
+      res,
+      {
+        emails,
+        pagination,
+      },
+      "Inbound emails retrieved successfully"
+    );
+  }
+);
+
+/**
  * Get email statistics
  */
 export const getEmailStats = asyncHandler(
@@ -319,6 +392,11 @@ export const getEmailStats = asyncHandler(
       direction: "inbound",
       status: "received",
     });
+    const unmatchedEmails = await Email.countDocuments({
+      direction: "inbound",
+      status: "received",
+      candidateId: { $exists: false },
+    });
     const draftEmails = await Email.countDocuments({ status: "draft" });
     const failedEmails = await Email.countDocuments({ status: "failed" });
 
@@ -328,6 +406,7 @@ export const getEmailStats = asyncHandler(
         totalEmails,
         sentEmails,
         receivedEmails,
+        unmatchedEmails,
         draftEmails,
         failedEmails,
       },

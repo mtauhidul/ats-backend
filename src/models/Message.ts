@@ -36,11 +36,19 @@ const messageSchema = new Schema<IMessage>(
     conversationId: {
       type: String,
       index: true,
+      required: function(this: IMessage) {
+        // Required for internal messages (not email tracking)
+        return !this.emailId;
+      },
     },
     senderId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
       index: true,
+      required: function(this: IMessage) {
+        // Required for internal messages (not email tracking)
+        return !this.emailId;
+      },
     },
     senderName: {
       type: String,
@@ -56,6 +64,10 @@ const messageSchema = new Schema<IMessage>(
       type: Schema.Types.ObjectId,
       ref: 'User',
       index: true,
+      required: function(this: IMessage) {
+        // Required for internal messages (not email tracking)
+        return !this.emailId;
+      },
     },
     recipientName: {
       type: String,
@@ -69,6 +81,10 @@ const messageSchema = new Schema<IMessage>(
     },
     message: {
       type: String,
+      required: function(this: IMessage) {
+        // Required for internal messages (not email tracking)
+        return !this.emailId;
+      },
     },
     read: {
       type: Boolean,
@@ -132,5 +148,8 @@ messageSchema.index({ senderId: 1, recipientId: 1 });
 messageSchema.index({ recipientId: 1, read: 1 });
 messageSchema.index({ candidateId: 1, receivedAt: -1 });
 messageSchema.index({ direction: 1, status: 1 });
+// Compound index for internal message queries (separates from email tracking)
+messageSchema.index({ senderId: 1, conversationId: 1, emailId: 1, sentAt: -1 });
+messageSchema.index({ recipientId: 1, conversationId: 1, emailId: 1, sentAt: -1 });
 
 export const Message = mongoose.model<IMessage>('Message', messageSchema);

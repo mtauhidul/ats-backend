@@ -109,7 +109,7 @@ export const getJobs = asyncHandler(
     const jobs = await Job.find(filter)
       .populate("clientId", "companyName logo")
       .populate("pipelineId", "name stages")
-      .populate("categoryIds", "name")
+      .populate("categoryIds", "name color")
       .populate("tagIds", "name color")
       .sort(sort)
       .skip(skip)
@@ -167,7 +167,7 @@ export const getJobs = asyncHandler(
       });
     });
     
-    // Add statistics to each job
+    // Add statistics to each job and transform _id to id
     const jobsWithStats = jobs.map((job: any) => {
       const jobId = (job._id || job.id).toString();
       const stats = statsMap.get(jobId) || {
@@ -175,9 +175,13 @@ export const getJobs = asyncHandler(
         activeCandidates: 0,
         hiredCandidates: 0,
       };
-      
+
+      // Transform _id to id for frontend compatibility (since we used .lean())
+      const { _id, __v, ...jobData } = job;
+
       return {
-        ...job,
+        ...jobData,
+        id: _id.toString(),
         statistics: stats,
       };
     });
@@ -203,7 +207,7 @@ export const getJobById = asyncHandler(
     const job = await Job.findById(id)
       .populate("clientId", "companyName logo website industry")
       .populate("pipelineId", "name stages")
-      .populate("categoryIds", "name")
+      .populate("categoryIds", "name color")
       .populate("tagIds", "name color")
       .populate("createdBy", "firstName lastName email");
 
