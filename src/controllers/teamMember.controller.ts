@@ -49,7 +49,7 @@ export const getTeamMembers = asyncHandler(
 
     // Fetch data
     const teamMembers = await TeamMember.find(filter)
-      .populate('userId', 'firstName lastName email avatar role phone title department')
+      .populate('userId', 'firstName lastName email avatar role phone title department permissions')
       .populate('jobId', 'title clientId')
       .populate('addedBy', 'firstName lastName email')
       .sort(sort)
@@ -75,7 +75,7 @@ export const getTeamMemberById = asyncHandler(
     const { id } = req.params;
 
     const teamMember = await TeamMember.findById(id)
-      .populate('userId', 'firstName lastName email avatar role phone title department')
+      .populate('userId', 'firstName lastName email avatar role phone title department permissions')
       .populate('jobId', 'title clientId location')
       .populate('addedBy', 'firstName lastName email');
 
@@ -311,14 +311,21 @@ export const updateTeamMember = asyncHandler(
     const { id } = req.params;
     const updates = req.body;
 
-    // Find the team member first
-    const teamMember = await TeamMember.findById(id);
+    // Try to find by TeamMember ID first
+    let teamMember = await TeamMember.findById(id);
+    
+    // If not found, try to find by User ID (in case frontend sends user ID)
+    if (!teamMember) {
+      teamMember = await TeamMember.findOne({ userId: id });
+    }
+    
     if (!teamMember) {
       throw new NotFoundError('Team member');
     }
 
     // Separate user fields from team member fields
-    const userFields = ['firstName', 'lastName', 'email', 'phone', 'title', 'department', 'avatar'];
+    // NOTE: permissions, role are stored in User collection
+    const userFields = ['firstName', 'lastName', 'email', 'phone', 'title', 'department', 'avatar', 'permissions', 'role'];
     const userUpdates: Record<string, unknown> = {};
     const teamMemberUpdates: Record<string, unknown> = {};
 
@@ -340,13 +347,19 @@ export const updateTeamMember = asyncHandler(
       );
       logger.info(`Updated user ${teamMember.userId} with fields: ${Object.keys(userUpdates).join(', ')}`);
       
-      // Send notification email about profile changes
+      // Send notification email about profile/permission changes
       const updatedUser = await User.findById(teamMember.userId);
       if (updatedUser && updatedUser.email) {
         try {
           const changes = Object.keys(userUpdates).map(key => {
-            const fieldName = key.charAt(0).toUpperCase() + key.slice(1);
-            return `${fieldName} updated`;
+            if (key === 'permissions') {
+              return 'Permissions updated';
+            } else if (key === 'role') {
+              return `Role changed to ${userUpdates[key]}`;
+            } else {
+              const fieldName = key.charAt(0).toUpperCase() + key.slice(1);
+              return `${fieldName} updated`;
+            }
           });
           
           const updaterName = req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Administrator';
@@ -419,13 +432,13 @@ export const updateTeamMember = asyncHandler(
     }
 
     // Fetch the updated team member with populated fields
-    const updatedTeamMember = await TeamMember.findById(id).populate([
-      { path: 'userId', select: 'firstName lastName email avatar role phone title department' },
+    const updatedTeamMember = await TeamMember.findById(teamMember._id).populate([
+      { path: 'userId', select: 'firstName lastName email avatar role phone title department permissions' },
       { path: 'jobId', select: 'title clientId' },
       { path: 'addedBy', select: 'firstName lastName email' },
     ]);
 
-    logger.info(`Team member updated: ${id} by ${req.user?.email}`);
+    logger.info(`Team member updated: ${teamMember._id} by ${req.user?.email}`);
 
     successResponse(res, updatedTeamMember, 'Team member updated successfully');
   }

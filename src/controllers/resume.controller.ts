@@ -159,16 +159,22 @@ export const parseAndSaveResume = asyncHandler(
       );
     }
 
-    // Check if application already exists for this job and email
+    // Check if application already exists for this job and email (including unassigned)
     const existingApplication = await Application.findOne({
-      jobId: data.jobId,
+      jobId: data.jobId || null,
       email: parsedData.personalInfo.email,
     });
 
     if (existingApplication) {
-      throw new CustomValidationError(
-        `Application already exists for this job with email: ${parsedData.personalInfo.email}`
-      );
+      if (data.jobId) {
+        throw new CustomValidationError(
+          `Application already exists for this job with email: ${parsedData.personalInfo.email}`
+        );
+      } else {
+        throw new CustomValidationError(
+          `Unassigned application already exists for email: ${parsedData.personalInfo.email}. Please assign a job or delete the existing application first.`
+        );
+      }
     }
 
     // Upload resume to Cloudinary

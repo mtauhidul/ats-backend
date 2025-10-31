@@ -110,14 +110,18 @@ class EmailAutomationJob {
   }
 
   /**
-   * Check if a candidate already exists with this email
+   * Check if a candidate already exists with this email for a specific job (or unassigned)
+   * @param email - Candidate email
+   * @param jobId - Job ID (null for unassigned applications)
    */
-  private async isDuplicate(email: string): Promise<boolean> {
+  private async isDuplicate(email: string, jobId: string | null = null): Promise<boolean> {
     try {
       if (!email) return false;
       
+      // Check for exact match: same email + same jobId (including null)
       const existing = await Application.findOne({ 
-        email: email.toLowerCase().trim() 
+        email: email.toLowerCase().trim(),
+        jobId: jobId || null // Explicitly check for null if no jobId
       });
       return !!existing;
     } catch (error: any) {
@@ -189,8 +193,15 @@ class EmailAutomationJob {
     }
     
     // Check for duplicate BEFORE processing attachments
-    if (await this.isDuplicate(fromEmail)) {
-      logger.warn(`⏭️ SKIPPING: Application already exists for ${fromEmail}`);
+    // Pass job ID to check for exact duplicate (same email + same job)
+    const jobId = job?._id?.toString() || null;
+    if (await this.isDuplicate(fromEmail, jobId)) {
+      if (jobId) {
+        logger.warn(`⏭️ SKIPPING: Application already exists for ${fromEmail} for this job`);
+      } else {
+        logger.warn(`⏭️ SKIPPING: Unassigned application already exists for ${fromEmail}`);
+        logger.warn(`   Tip: Assign the existing application to a job or delete it to process new resumes from this email.`);
+      }
       this.stats.totalEmailsProcessed++;
       return;
     }
@@ -339,13 +350,25 @@ class EmailAutomationJob {
 
     } catch (error: any) {
       this.stats.totalErrors++;
-      logger.error(`\n❌ FAILED: Error processing email from ${fromEmail}:`, {
-        error: error.message,
-        stack: error.stack,
-        fromEmail,
-        subject,
-        filename: attachment.filename
-      });
+      
+      // Check if this is a duplicate application error
+      const isDuplicateError = error.message?.includes('Application already exists') || 
+                               error.code === 11000;
+      
+      if (isDuplicateError) {
+        logger.warn(`⚠️ SKIPPED: Duplicate application from ${fromEmail}`);
+        logger.warn(`   Reason: ${error.message}`);
+        logger.warn(`   This resume was already processed. The email will be marked as read.`);
+      } else {
+        logger.error(`\n❌ FAILED: Error processing email from ${fromEmail}:`, {
+          error: error.message,
+          stack: error.stack,
+          fromEmail,
+          subject,
+          filename: attachment.filename
+        });
+      }
+      
       throw error;
     }
   }

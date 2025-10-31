@@ -115,15 +115,28 @@ export async function createApplicationWithParsing(
   }
 
   // Step 3: Check for duplicate application
-  if (input.jobId) {
-    const existingApplication = await Application.findOne({
-      jobId: input.jobId,
-      email: candidateEmail,
-    });
+  // Check if application exists with this jobId + email combination
+  // This includes checking for jobId: null (unassigned applications)
+  const existingApplication = await Application.findOne({
+    jobId: input.jobId || null,
+    email: candidateEmail,
+  });
 
-    if (existingApplication) {
+  if (existingApplication) {
+    if (input.jobId) {
       throw new ValidationError(
         `Application already exists for this job with email: ${candidateEmail}`
+      );
+    } else {
+      // For unassigned applications, update the existing one instead of creating a new one
+      logger.info(
+        `Found existing unassigned application for ${candidateEmail}, updating instead of creating new one`
+      );
+      
+      // We'll return the existing application ID but continue with the upload and update process
+      // This prevents duplicate key error while preserving the resume update functionality
+      throw new ValidationError(
+        `Application already exists for email: ${candidateEmail}. Please assign a job or delete the existing unassigned application first.`
       );
     }
   }

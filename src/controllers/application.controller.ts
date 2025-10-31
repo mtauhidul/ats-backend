@@ -63,21 +63,27 @@ export const createApplication = asyncHandler(
         throw new NotFoundError('Job not found');
       }
 
-      // Check for duplicate application for this job
-      const existingApplication = await Application.findOne({
-        jobId: data.jobId,
-        email: data.email,
-      });
-
-      if (existingApplication) {
-        throw new CustomValidationError(
-          `Application already exists for this job with email: ${data.email}`
-        );
-      }
-
       // Set clientId from job if not provided
       if (!data.clientId && job.clientId) {
         data.clientId = job.clientId.toString();
+      }
+    }
+
+    // Check for duplicate application (including unassigned with jobId: null)
+    const existingApplication = await Application.findOne({
+      jobId: data.jobId || null,
+      email: data.email,
+    });
+
+    if (existingApplication) {
+      if (data.jobId) {
+        throw new CustomValidationError(
+          `Application already exists for this job with email: ${data.email}`
+        );
+      } else {
+        throw new CustomValidationError(
+          `Unassigned application already exists for email: ${data.email}. Please assign a job or delete the existing application first.`
+        );
       }
     }
 
