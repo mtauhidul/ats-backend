@@ -39,8 +39,8 @@ async function startServer() {
       logger.info(`📡 API: http://localhost:${config.port}/api`);
     });
 
-    // Start email automation cron job
-    emailAutomationJob.start();
+    // Start email automation cron job (will check database for enabled status)
+    await emailAutomationJob.start();
 
     // Graceful shutdown
     const shutdown = async (signal: string) => {

@@ -13,7 +13,7 @@ import {
   getEmailStats,
   getInboundEmails,
 } from '../controllers/email.controller';
-import { emailAutomationJob } from '../jobs/emailAutomation.job';
+import emailAutomationJob from '../jobs/emailAutomation.job';
 
 const router = express.Router();
 
@@ -144,9 +144,9 @@ router.delete(
 router.get(
   '/automation/status',
   requireRole('admin'),
-  (_req, res) => {
+  async (_req, res) => {
     try {
-      const status = emailAutomationJob.getStatus();
+      const status = await emailAutomationJob.getStats();
       res.json({
         success: true,
         data: status,
@@ -169,12 +169,13 @@ router.get(
 router.post(
   '/automation/start',
   requireRole('admin'),
-  (_req, res) => {
+  async (req, res) => {
     try {
-      emailAutomationJob.enable();
+      const userId = req.user?.id;
+      await emailAutomationJob.enable(userId);
       res.json({
         success: true,
-        message: 'Email automation enabled',
+        message: 'Email automation enabled and saved to database',
       });
     } catch (error: any) {
       res.status(500).json({
@@ -194,12 +195,65 @@ router.post(
 router.post(
   '/automation/stop',
   requireRole('admin'),
-  (_req, res) => {
+  async (req, res) => {
     try {
-      emailAutomationJob.disable();
+      const userId = req.user?.id;
+      await emailAutomationJob.disable(userId);
       res.json({
         success: true,
-        message: 'Email automation disabled',
+        message: 'Email automation disabled and saved to database',
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to disable automation',
+        error: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * @route   POST /api/emails/automation/enable
+ * @desc    Enable/start email automation (alias for /start)
+ * @access  Admin, Super Admin
+ */
+router.post(
+  '/automation/enable',
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      await emailAutomationJob.enable(userId);
+      res.json({
+        success: true,
+        message: 'Email automation enabled and saved to database',
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to enable automation',
+        error: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * @route   POST /api/emails/automation/disable
+ * @desc    Disable/stop email automation (alias for /stop)
+ * @access  Admin, Super Admin
+ */
+router.post(
+  '/automation/disable',
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      await emailAutomationJob.disable(userId);
+      res.json({
+        success: true,
+        message: 'Email automation disabled and saved to database',
       });
     } catch (error: any) {
       res.status(500).json({

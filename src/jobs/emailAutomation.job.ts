@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { EmailAccount, Job, Application } from '../models';
+import { EmailAccount, Job, Application, SystemSettings } from '../models';
 import imapService from '../services/imap.service';
 import { createApplicationWithParsing } from '../services/application.service';
 import { parseResumeWithFallback } from '../services/enhancedResumeParser.service';
@@ -34,7 +34,7 @@ import { config } from '../config';
 class EmailAutomationJob {
   private isRunning = false;
   private cronJob: cron.ScheduledTask | null = null;
-  private isEnabled = true;
+  // Remove hardcoded isEnabled - will read from database
   
   // Stats tracking
   private stats = {
@@ -51,29 +51,54 @@ class EmailAutomationJob {
   private readonly EMAIL_TIMEOUT = 60000; // 60 seconds per email
 
   /**
+   * Check if automation is enabled in database
+   */
+  private async isEnabled(): Promise<boolean> {
+    try {
+      const settings = await SystemSettings.getSettings();
+      return settings.emailAutomationEnabled;
+    } catch (error) {
+      logger.error('Failed to check automation status:', error);
+      return false; // Fail safe - don't run if we can't check status
+    }
+  }
+
+  /**
    * Start the cron job
    */
-  start(): void {
+  async start(): Promise<void> {
     const interval = config.email.checkInterval || '*/15 * * * *';
 
     this.cronJob = cron.schedule(interval, async () => {
-      if (this.isEnabled) {
+      const enabled = await this.isEnabled();
+      if (enabled) {
         await this.processEmails();
       } else {
-        logger.info('Email automation is disabled, skipping cycle');
+        logger.info('Email automation is disabled in settings, skipping cycle');
       }
     });
 
     logger.info(`📧 Email automation cron job started (interval: ${interval})`);
     
-    // Run immediately on startup
-    setTimeout(() => {
-      if (this.isEnabled) {
-        this.processEmails().catch(err => {
-          logger.error('Initial email processing failed:', err);
+    // Check database status before running on startup
+    const enabled = await this.isEnabled();
+    logger.info(`📧 Email automation status from database: ${enabled ? 'ENABLED' : 'DISABLED'}`);
+    
+    if (enabled) {
+      logger.info('📧 Email automation will run initial check in 5 seconds...');
+      // Run immediately on startup if enabled
+      setTimeout(() => {
+        this.isEnabled().then(stillEnabled => {
+          if (stillEnabled) {
+            this.processEmails().catch(err => {
+              logger.error('Initial email processing failed:', err);
+            });
+          }
         });
-      }
-    }, 5000);
+      }, 5000);
+    } else {
+      logger.info('📧 Email automation is disabled. Use the admin panel to enable it.');
+    }
   }
 
   /**
@@ -87,26 +112,49 @@ class EmailAutomationJob {
   }
 
   /**
-   * Enable email automation
+   * Enable email automation (saves to database)
    */
-  enable(): void {
-    this.isEnabled = true;
-    logger.info('📧 Email automation enabled');
+  async enable(userId?: string): Promise<void> {
+    try {
+      await SystemSettings.setEmailAutomation(true, userId as any);
+      logger.info('📧 Email automation enabled and saved to database');
+    } catch (error) {
+      logger.error('Failed to enable email automation:', error);
+      throw error;
+    }
   }
 
   /**
-   * Disable email automation
+   * Disable email automation (saves to database)
    */
-  disable(): void {
-    this.isEnabled = false;
-    logger.info('📧 Email automation disabled');
+  async disable(userId?: string): Promise<void> {
+    try {
+      await SystemSettings.setEmailAutomation(false, userId as any);
+      logger.info('📧 Email automation disabled and saved to database');
+    } catch (error) {
+      logger.error('Failed to disable email automation:', error);
+      throw error;
+    }
   }
 
   /**
    * Get stats
    */
-  getStats() {
-    return { ...this.stats };
+  async getStats() {
+    const enabled = await this.isEnabled();
+    return {
+      ...this.stats,
+      enabled,
+      running: this.isRunning,
+    };
+  }
+
+  /**
+   * Manually trigger email processing (for testing)
+   */
+  async triggerManual(): Promise<void> {
+    logger.info('📧 Manually triggering email automation...');
+    await this.processEmails();
   }
 
   /**
