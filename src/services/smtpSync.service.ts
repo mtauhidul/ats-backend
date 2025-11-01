@@ -3,6 +3,7 @@ import { simpleParser, ParsedMail } from "mailparser";
 import { SystemSettings } from "../models/SystemSettings";
 import { Email } from "../models/Email";
 import { Candidate } from "../models/Candidate";
+import { Application } from "../models/Application";
 
 interface EmailSyncResult {
   success: boolean;
@@ -200,7 +201,6 @@ async function saveInboundEmail(parsed: ParsedMail): Promise<void> {
         candidateId = candidate._id;
         
         // Try to find the most recent application for this candidate
-        const Application = require("../models/Application");
         const latestApplication = await Application.findOne({
           candidateId: candidate._id,
         })
