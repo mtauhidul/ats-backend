@@ -105,7 +105,6 @@ export const config = {
 export function validateConfig() {
   const required = [
     'MONGODB_URI',
-    'CLERK_SECRET_KEY',
     'OPENAI_API_KEY',
     'RESEND_API_KEY',
   ];

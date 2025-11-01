@@ -761,7 +761,24 @@ export const getDashboardAnalytics = asyncHandler(
                     input: "$sourceBreakdown",
                     as: "item",
                     cond: {
-                      $in: ["$$item.source", ["direct_submission", "manual_import"]]
+                      $eq: ["$$item.source", "direct_submission"]
+                    }
+                  }
+                },
+                as: "filtered",
+                in: "$$filtered.count"
+              }
+            }
+          },
+          manualImports: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: "$sourceBreakdown",
+                    as: "item",
+                    cond: {
+                      $eq: ["$$item.source", "manual_import"]
                     }
                   }
                 },
