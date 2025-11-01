@@ -106,6 +106,15 @@ const notificationSchema = new Schema<INotification>(
 notificationSchema.index({ userId: 1, createdAt: -1 });
 notificationSchema.index({ userId: 1, read: 1 });
 notificationSchema.index({ userId: 1, isImportant: 1 });
-notificationSchema.index({ expiresAt: 1 });
+
+// TTL index - automatically delete expired notifications
+// Documents will be deleted when expiresAt date is reached
+notificationSchema.index(
+  { expiresAt: 1 },
+  {
+    expireAfterSeconds: 0, // Delete immediately when expiresAt date is reached
+    sparse: true, // Only index documents that have expiresAt field
+  }
+);
 
 export const Notification = mongoose.model<INotification>('Notification', notificationSchema);

@@ -2,6 +2,10 @@ import app from "./app";
 import { config, validateConfig } from "./config";
 import { connectDatabase } from "./config/database";
 import emailAutomationJob from "./jobs/emailAutomation.job";
+import {
+  scheduleDataCleanup,
+  validateTTLSetup,
+} from "./jobs/dataCleanup.job";
 import { seedEmailTemplates } from "./seeds/emailTemplates.seed";
 import logger from "./utils/logger";
 
@@ -18,6 +22,9 @@ async function startServer() {
   try {
     // Connect to MongoDB
     await connectDatabase();
+
+    // Validate TTL indexes are properly configured
+    await validateTTLSetup();
 
     // Seed default email templates
     await seedEmailTemplates();
@@ -41,6 +48,9 @@ async function startServer() {
 
     // Start email automation cron job (will check database for enabled status)
     await emailAutomationJob.start();
+
+    // Schedule data cleanup job (runs daily at 2 AM)
+    scheduleDataCleanup();
 
     // Graceful shutdown
     const shutdown = async (signal: string) => {

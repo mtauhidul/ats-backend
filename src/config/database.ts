@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import logger from "../utils/logger";
 import { config } from "./index";
+import { configureGlobalQueryTimeout } from "../middleware/queryTimeout";
 
 export async function connectDatabase(): Promise<void> {
   try {
@@ -18,9 +19,47 @@ export async function connectDatabase(): Promise<void> {
       compressors: ['zlib'],
     });
     logger.info("✅ MongoDB connected successfully");
+
+    // Enable query profiling in development and staging
+    if (config.env === 'development' || config.env === 'staging') {
+      await enableQueryProfiling();
+    }
+
+    // Configure global query timeout (5 seconds)
+    configureGlobalQueryTimeout(5000);
   } catch (error) {
     logger.error("❌ MongoDB connection error:", error);
     process.exit(1);
+  }
+}
+
+/**
+ * Enable MongoDB query profiling for performance monitoring
+ */
+async function enableQueryProfiling(): Promise<void> {
+  try {
+    // Enable Mongoose debug mode to log all queries
+    mongoose.set('debug', (collectionName: string, method: string, query: any, doc: any) => {
+      const queryInfo = {
+        collection: collectionName,
+        method: method,
+        query: JSON.stringify(query),
+        doc: doc ? JSON.stringify(doc).substring(0, 100) : undefined,
+      };
+      logger.debug('Mongoose Query', queryInfo);
+    });
+
+    // Set MongoDB profiler to log slow queries (> 100ms)
+    if (mongoose.connection.db) {
+      // Use command directly to set profiling with slowms option
+      await mongoose.connection.db.command({
+        profile: 1,
+        slowms: 100,
+      });
+      logger.info("✅ MongoDB query profiling enabled (slow queries > 100ms)");
+    }
+  } catch (error) {
+    logger.warn("⚠️ Could not enable query profiling:", error);
   }
 }
 
