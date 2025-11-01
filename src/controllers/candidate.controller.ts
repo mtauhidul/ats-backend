@@ -1,19 +1,26 @@
-import { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import { Candidate, Job, User } from '../models';
-import openaiService from '../services/openai.service';
-import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
-import { NotFoundError, ValidationError as CustomValidationError } from '../utils/errors';
-import logger from '../utils/logger';
-import { sendAssignmentEmail } from '../services/email.service';
+import { Request, Response } from "express";
+import mongoose from "mongoose";
+import { Candidate, Job, User } from "../models";
+import { sendAssignmentEmail } from "../services/email.service";
+import openaiService from "../services/openai.service";
 import {
+  BulkMoveCandidatesInput,
   CreateCandidateInput,
-  UpdateCandidateInput,
   ListCandidatesQuery,
   MoveCandidateStageInput,
   RescoreCandidateInput,
-  BulkMoveCandidatesInput,
-} from '../types/candidate.types';
+  UpdateCandidateInput,
+} from "../types/candidate.types";
+import {
+  ValidationError as CustomValidationError,
+  NotFoundError,
+} from "../utils/errors";
+import {
+  asyncHandler,
+  paginateResults,
+  successResponse,
+} from "../utils/helpers";
+import logger from "../utils/logger";
 
 /**
  * Create new candidate (manual entry)
@@ -25,7 +32,7 @@ export const createCandidate = asyncHandler(
     // Verify job exists
     const job = await Job.findById(data.jobId);
     if (!job) {
-      throw new NotFoundError('Job not found');
+      throw new NotFoundError("Job not found");
     }
 
     // Check for duplicate candidate - using email only since candidate can apply to multiple jobs
@@ -35,7 +42,7 @@ export const createCandidate = asyncHandler(
 
     if (existingCandidate) {
       // Check if already applied to this job
-      if (existingCandidate.jobIds.some(id => id.toString() === data.jobId)) {
+      if (existingCandidate.jobIds.some((id) => id.toString() === data.jobId)) {
         throw new CustomValidationError(
           `Candidate already exists for this job with email: ${data.email}`
         );
@@ -46,28 +53,32 @@ export const createCandidate = asyncHandler(
     const candidate = await Candidate.create({
       ...data,
       jobIds: [data.jobId], // First job
-      status: data.status || 'active',
-      source: 'manual_import',
-      jobApplications: [{
-        jobId: data.jobId,
-        status: data.status || 'active',
-        appliedAt: new Date(),
-        lastStatusChange: new Date(),
-        emailIds: [],
-        emailsSent: 0,
-        emailsReceived: 0,
-      }],
+      status: data.status || "active",
+      source: "manual_import",
+      jobApplications: [
+        {
+          jobId: data.jobId,
+          status: data.status || "active",
+          appliedAt: new Date(),
+          lastStatusChange: new Date(),
+          emailIds: [],
+          emailsSent: 0,
+          emailsReceived: 0,
+        },
+      ],
     });
 
     // Populate references
     await candidate.populate([
-      { path: 'jobIds', select: 'title location employmentType' },
-      { path: 'applicationId', select: 'source appliedAt' },
+      { path: "jobIds", select: "title location employmentType" },
+      { path: "applicationId", select: "source appliedAt" },
     ]);
 
-    logger.info(`Candidate created manually: ${candidate.email} for job ${job.title}`);
+    logger.info(
+      `Candidate created manually: ${candidate.email} for job ${job.title}`
+    );
 
-    successResponse(res, candidate, 'Candidate created successfully', 201);
+    successResponse(res, candidate, "Candidate created successfully", 201);
   }
 );
 
@@ -85,8 +96,8 @@ export const getCandidates = asyncHandler(
       minScore,
       maxScore,
       search,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
+      sortBy = "createdAt",
+      sortOrder = "desc",
     } = req.query as any as ListCandidatesQuery;
 
     // Build filter
@@ -94,19 +105,21 @@ export const getCandidates = asyncHandler(
     if (jobId) filter.jobIds = jobId; // Check if jobId is in the array
     if (status) filter.status = status;
     if (currentStage) filter.currentPipelineStageId = currentStage;
-    
+
     // AI Score filtering
     if (minScore !== undefined || maxScore !== undefined) {
-      filter['aiScore.overallScore'] = {};
-      if (minScore !== undefined) filter['aiScore.overallScore'].$gte = minScore;
-      if (maxScore !== undefined) filter['aiScore.overallScore'].$lte = maxScore;
+      filter["aiScore.overallScore"] = {};
+      if (minScore !== undefined)
+        filter["aiScore.overallScore"].$gte = minScore;
+      if (maxScore !== undefined)
+        filter["aiScore.overallScore"].$lte = maxScore;
     }
 
     if (search) {
       filter.$or = [
-        { firstName: { $regex: search, $options: 'i' } },
-        { lastName: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -126,20 +139,20 @@ export const getCandidates = asyncHandler(
 
     // Build sort object
     const sort: any = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
 
     // Fetch data with nested population
     const candidates = await Candidate.find(filter)
       .populate({
-        path: 'jobIds',
-        select: 'title location employmentType clientId',
+        path: "jobIds",
+        select: "title location employmentType clientId",
         populate: {
-          path: 'clientId',
-          select: 'companyName logo email industry'
-        }
+          path: "clientId",
+          select: "companyName logo email industry",
+        },
       })
-      .populate('applicationId', 'source appliedAt')
-      .populate('assignedTo', 'firstName lastName email avatar')
+      .populate("applicationId", "source appliedAt")
+      .populate("assignedTo", "firstName lastName email avatar")
       .sort(sort)
       .skip(skip)
       .limit(limit)
@@ -148,20 +161,21 @@ export const getCandidates = asyncHandler(
     logger.info(`Found ${candidates.length} candidates`);
 
     // Manually populate currentStage for each candidate - OPTIMIZED to avoid N+1 queries
-    const { Pipeline } = await import('../models/Pipeline');
-    
+    const { Pipeline } = await import("../models/Pipeline");
+
     // Collect all unique pipeline stage IDs
     const stageIds = candidates
       .filter((c: any) => c.currentPipelineStageId)
       .map((c: any) => c.currentPipelineStageId);
-    
+
     // Fetch all pipelines that contain these stages in ONE query
-    const pipelines = stageIds.length > 0 
-      ? await Pipeline.find({
-          'stages._id': { $in: stageIds }
-        }).lean()
-      : [];
-    
+    const pipelines =
+      stageIds.length > 0
+        ? await Pipeline.find({
+            "stages._id": { $in: stageIds },
+          }).lean()
+        : [];
+
     // Create a map of stageId -> stage data for fast lookup
     const stageMap = new Map();
     pipelines.forEach((pipeline: any) => {
@@ -174,18 +188,18 @@ export const getCandidates = asyncHandler(
         });
       });
     });
-    
+
     // Now populate stages for all candidates without additional queries
     const candidatesWithStage = candidates.map((candidate: any) => {
       if (candidate.currentPipelineStageId) {
         const stageId = candidate.currentPipelineStageId.toString();
         const stageData = stageMap.get(stageId);
-        
+
         if (stageData) {
           candidate.currentStage = stageData;
         }
       }
-      
+
       return candidate;
     });
 
@@ -195,7 +209,7 @@ export const getCandidates = asyncHandler(
         candidates: candidatesWithStage,
         pagination,
       },
-      'Candidates retrieved successfully'
+      "Candidates retrieved successfully"
     );
   }
 );
@@ -209,46 +223,49 @@ export const getCandidateById = asyncHandler(
 
     const candidate = await Candidate.findById(id)
       .populate({
-        path: 'jobIds',
-        select: 'title description location employmentType salaryRange requirements skills clientId',
+        path: "jobIds",
+        select:
+          "title description location employmentType salaryRange requirements skills clientId",
         populate: {
-          path: 'clientId',
-          select: 'companyName logo email industry address'
-        }
+          path: "clientId",
+          select: "companyName logo email industry address",
+        },
       })
       .populate({
-        path: 'jobApplications.jobId',
-        select: 'title description location employmentType salaryRange requirements skills clientId',
+        path: "jobApplications.jobId",
+        select:
+          "title description location employmentType salaryRange requirements skills clientId",
         populate: {
-          path: 'clientId',
-          select: 'companyName logo email industry address'
-        }
+          path: "clientId",
+          select: "companyName logo email industry address",
+        },
       })
-      .populate('applicationId', 'source appliedAt resumeUrl parsedData')
-      .populate('assignedTo', 'firstName lastName email avatar');
+      .populate("applicationId", "source appliedAt resumeUrl parsedData")
+      .populate("assignedTo", "firstName lastName email avatar");
 
     if (!candidate) {
-      throw new NotFoundError('Candidate not found');
+      throw new NotFoundError("Candidate not found");
     }
 
     // Get the current pipeline stage name if available
     let currentStage = null;
     if (candidate.currentPipelineStageId) {
-      const Pipeline = (await import('../models/Pipeline')).Pipeline;
+      const Pipeline = (await import("../models/Pipeline")).Pipeline;
       const pipeline = await Pipeline.findOne({
-        'stages._id': candidate.currentPipelineStageId
+        "stages._id": candidate.currentPipelineStageId,
       });
-      
+
       if (pipeline) {
         const stage = pipeline.stages.find(
-          (s: any) => s._id.toString() === candidate.currentPipelineStageId?.toString()
+          (s: any) =>
+            s._id.toString() === candidate.currentPipelineStageId?.toString()
         );
         if (stage) {
           currentStage = {
             id: stage._id,
             name: stage.name,
             color: stage.color,
-            order: stage.order
+            order: stage.order,
           };
         }
       }
@@ -260,7 +277,7 @@ export const getCandidateById = asyncHandler(
       candidateData.currentStage = currentStage;
     }
 
-    successResponse(res, candidateData, 'Candidate retrieved successfully');
+    successResponse(res, candidateData, "Candidate retrieved successfully");
   }
 );
 
@@ -275,13 +292,14 @@ export const updateCandidate = asyncHandler(
     const candidate = await Candidate.findById(id);
 
     if (!candidate) {
-      throw new NotFoundError('Candidate not found');
+      throw new NotFoundError("Candidate not found");
     }
 
     // Track if assignedTo is changing (accessing from req.body since it's not in the type)
     const oldAssignedTo = candidate.assignedTo?.toString();
     const newAssignedTo = (req.body as any).assignedTo?.toString();
-    const isAssignmentChanged = oldAssignedTo !== newAssignedTo && newAssignedTo !== undefined;
+    const isAssignmentChanged =
+      oldAssignedTo !== newAssignedTo && newAssignedTo !== undefined;
 
     // Check if email is being changed and if it creates a duplicate
     if (updates.email && updates.email !== candidate.email) {
@@ -303,9 +321,9 @@ export const updateCandidate = asyncHandler(
 
     // Populate references
     await candidate.populate([
-      { path: 'jobIds', select: 'title location employmentType' },
-      { path: 'applicationId', select: 'source appliedAt' },
-      { path: 'assignedTo', select: 'firstName lastName email avatar' },
+      { path: "jobIds", select: "title location employmentType" },
+      { path: "applicationId", select: "source appliedAt" },
+      { path: "assignedTo", select: "firstName lastName email avatar" },
     ]);
 
     logger.info(`Candidate updated: ${candidate.email}`);
@@ -315,25 +333,30 @@ export const updateCandidate = asyncHandler(
       try {
         const assignedUser = await User.findById(newAssignedTo);
         if (assignedUser && assignedUser.email) {
-          const assignerName = req.user ? `${req.user.firstName} ${req.user.lastName}` : 'Administrator';
+          const assignerName = req.user
+            ? `${req.user.firstName} ${req.user.lastName}`
+            : "Administrator";
           const candidateName = `${candidate.firstName} ${candidate.lastName}`;
-          
+
           // Get job title if available
-          const job = candidate.jobIds && candidate.jobIds.length > 0 
-            ? await Job.findById(candidate.jobIds[0])
-            : null;
-          const entityName = job 
+          const job =
+            candidate.jobIds && candidate.jobIds.length > 0
+              ? await Job.findById(candidate.jobIds[0])
+              : null;
+          const entityName = job
             ? `Candidate: ${candidateName} (${job.title})`
             : `Candidate: ${candidateName}`;
-          
+
           await sendAssignmentEmail(
             assignedUser.email,
             assignedUser.firstName,
-            'candidate',
+            "candidate",
             entityName,
             assignerName
           );
-          logger.info(`Candidate assignment notification email sent to ${assignedUser.email}`);
+          logger.info(
+            `Candidate assignment notification email sent to ${assignedUser.email}`
+          );
         }
       } catch (emailError) {
         // Log error but don't fail the request
@@ -341,7 +364,7 @@ export const updateCandidate = asyncHandler(
       }
     }
 
-    successResponse(res, candidate, 'Candidate updated successfully');
+    successResponse(res, candidate, "Candidate updated successfully");
   }
 );
 
@@ -355,13 +378,13 @@ export const deleteCandidate = asyncHandler(
     const candidate = await Candidate.findById(id);
 
     if (!candidate) {
-      throw new NotFoundError('Candidate not found');
+      throw new NotFoundError("Candidate not found");
     }
 
     // Check if candidate is hired (might want to prevent deletion)
-    if (candidate.status === 'hired') {
+    if (candidate.status === "hired") {
       throw new CustomValidationError(
-        'Cannot delete a hired candidate. Please change status first.'
+        "Cannot delete a hired candidate. Please change status first."
       );
     }
 
@@ -369,7 +392,7 @@ export const deleteCandidate = asyncHandler(
 
     logger.info(`Candidate deleted: ${candidate.email}`);
 
-    successResponse(res, null, 'Candidate deleted successfully');
+    successResponse(res, null, "Candidate deleted successfully");
   }
 );
 
@@ -384,19 +407,21 @@ export const moveCandidateStage = asyncHandler(
     const candidate = await Candidate.findById(id);
 
     if (!candidate) {
-      throw new NotFoundError('Candidate not found');
+      throw new NotFoundError("Candidate not found");
     }
 
     // Update stage - newStage is the stage ID (ObjectId)
     candidate.currentPipelineStageId = newStage as any;
     if (notes) {
-      candidate.notes = candidate.notes ? `${candidate.notes}\n\n${notes}` : notes;
+      candidate.notes = candidate.notes
+        ? `${candidate.notes}\n\n${notes}`
+        : notes;
     }
     await candidate.save();
 
     logger.info(`Candidate ${candidate.email} moved to stage: ${newStage}`);
 
-    successResponse(res, candidate, 'Candidate stage updated successfully');
+    successResponse(res, candidate, "Candidate stage updated successfully");
   }
 );
 
@@ -408,29 +433,31 @@ export const rescoreCandidate = asyncHandler(
     const { id } = req.params;
     const { jobId }: RescoreCandidateInput = req.body;
 
-    const candidate = await Candidate.findById(id).populate('applicationId');
+    const candidate = await Candidate.findById(id).populate("applicationId");
 
     if (!candidate) {
-      throw new NotFoundError('Candidate not found');
+      throw new NotFoundError("Candidate not found");
     }
 
     // Verify job exists
     const job = await Job.findById(jobId);
     if (!job) {
-      throw new NotFoundError('Job not found');
+      throw new NotFoundError("Job not found");
     }
 
-    logger.info(`Re-scoring candidate: ${candidate.email} against job ${job.title}`);
+    logger.info(
+      `Re-scoring candidate: ${candidate.email} against job ${job.title}`
+    );
 
     // Get parsed data from application if available
     let parsedData: any = {
-      summary: '',
+      summary: "",
       skills: [],
       experience: [],
       education: [],
       certifications: [],
       languages: [],
-      extractedText: '',
+      extractedText: "",
     };
 
     if (candidate.applicationId) {
@@ -438,7 +465,7 @@ export const rescoreCandidate = asyncHandler(
       if (application.parsedData) {
         parsedData = {
           ...application.parsedData,
-          extractedText: '',
+          extractedText: "",
         };
       }
     }
@@ -446,7 +473,7 @@ export const rescoreCandidate = asyncHandler(
     // Perform AI scoring
     const aiScore = await openaiService.scoreCandidate(
       parsedData,
-      job.description || '',
+      job.description || "",
       job.requirements || []
     );
 
@@ -462,7 +489,7 @@ export const rescoreCandidate = asyncHandler(
       `Candidate re-scored: ${candidate.email} with score: ${aiScore.overallScore}`
     );
 
-    successResponse(res, candidate, 'Candidate re-scored successfully');
+    successResponse(res, candidate, "Candidate re-scored successfully");
   }
 );
 
@@ -474,9 +501,11 @@ export const bulkMoveCandidates = asyncHandler(
     const { candidateIds, newStage, notes }: BulkMoveCandidatesInput = req.body;
 
     // Validate all IDs
-    const validIds = candidateIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+    const validIds = candidateIds.filter((id) =>
+      mongoose.Types.ObjectId.isValid(id)
+    );
     if (validIds.length !== candidateIds.length) {
-      throw new CustomValidationError('Some candidate IDs are invalid');
+      throw new CustomValidationError("Some candidate IDs are invalid");
     }
 
     // Update candidates - newStage is the stage ID
@@ -490,7 +519,9 @@ export const bulkMoveCandidates = asyncHandler(
       updateData
     );
 
-    logger.info(`Bulk moved ${result.modifiedCount} candidates to stage: ${newStage}`);
+    logger.info(
+      `Bulk moved ${result.modifiedCount} candidates to stage: ${newStage}`
+    );
 
     successResponse(
       res,
@@ -512,60 +543,74 @@ export const addCandidatesToPipeline = asyncHandler(
     const { candidateIds, pipelineId, jobId } = req.body;
 
     // Validate inputs
-    if (!candidateIds || !Array.isArray(candidateIds) || candidateIds.length === 0) {
-      throw new CustomValidationError('candidateIds must be a non-empty array');
+    if (
+      !candidateIds ||
+      !Array.isArray(candidateIds) ||
+      candidateIds.length === 0
+    ) {
+      throw new CustomValidationError("candidateIds must be a non-empty array");
     }
 
     if (!pipelineId) {
-      throw new CustomValidationError('pipelineId is required');
+      throw new CustomValidationError("pipelineId is required");
     }
 
     // Validate all candidate IDs
-    const validIds = candidateIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+    const validIds = candidateIds.filter((id) =>
+      mongoose.Types.ObjectId.isValid(id)
+    );
     if (validIds.length !== candidateIds.length) {
-      throw new CustomValidationError('Some candidate IDs are invalid');
+      throw new CustomValidationError("Some candidate IDs are invalid");
     }
 
     // Get the pipeline and its first stage
-    const Pipeline = (await import('../models/Pipeline')).Pipeline;
+    const Pipeline = (await import("../models/Pipeline")).Pipeline;
     const pipeline = await Pipeline.findById(pipelineId);
 
     if (!pipeline) {
-      throw new NotFoundError('Pipeline not found');
+      throw new NotFoundError("Pipeline not found");
     }
 
     if (!pipeline.stages || pipeline.stages.length === 0) {
-      throw new CustomValidationError('Pipeline has no stages defined');
+      throw new CustomValidationError("Pipeline has no stages defined");
     }
 
     // Get the first stage (sorted by order)
-    const sortedStages = pipeline.stages.sort((a: any, b: any) => a.order - b.order);
+    const sortedStages = pipeline.stages.sort(
+      (a: any, b: any) => a.order - b.order
+    );
     const firstStage = sortedStages[0];
 
-    logger.info(`Adding ${validIds.length} candidates to pipeline ${pipeline.name}, first stage: ${firstStage.name}`);
+    logger.info(
+      `Adding ${validIds.length} candidates to pipeline ${pipeline.name}, first stage: ${firstStage.name}`
+    );
 
     // If jobId is provided, verify candidates belong to this job
     if (jobId) {
       const candidatesToUpdate = await Candidate.find({
         _id: { $in: validIds },
-        jobIds: jobId
+        jobIds: jobId,
       });
 
       if (candidatesToUpdate.length !== validIds.length) {
-        throw new CustomValidationError('Some candidates do not belong to the specified job');
+        throw new CustomValidationError(
+          "Some candidates do not belong to the specified job"
+        );
       }
     }
 
     // Update candidates - assign to first stage
     const result = await Candidate.updateMany(
       { _id: { $in: validIds } },
-      { 
+      {
         currentPipelineStageId: firstStage._id,
-        updatedBy: (req as any).user?.id
+        updatedBy: (req as any).user?.id,
       }
     );
 
-    logger.info(`Successfully added ${result.modifiedCount} candidates to pipeline ${pipeline.name}`);
+    logger.info(
+      `Successfully added ${result.modifiedCount} candidates to pipeline ${pipeline.name}`
+    );
 
     successResponse(
       res,
@@ -573,7 +618,7 @@ export const addCandidatesToPipeline = asyncHandler(
         modifiedCount: result.modifiedCount,
         pipelineId,
         stageName: firstStage.name,
-        stageId: firstStage._id
+        stageId: firstStage._id,
       },
       `Successfully added ${result.modifiedCount} candidates to pipeline`
     );
@@ -589,7 +634,7 @@ export const getCandidatesWithoutPipeline = asyncHandler(
     const { jobId } = req.query;
 
     if (!jobId) {
-      throw new CustomValidationError('jobId is required');
+      throw new CustomValidationError("jobId is required");
     }
 
     // Find candidates for this job that have no pipeline stage assigned
@@ -597,13 +642,17 @@ export const getCandidatesWithoutPipeline = asyncHandler(
       jobIds: jobId,
       $or: [
         { currentPipelineStageId: null },
-        { currentPipelineStageId: { $exists: false } }
-      ]
+        { currentPipelineStageId: { $exists: false } },
+      ],
     })
-    .select('firstName lastName email phone avatar skills aiScore status createdAt')
-    .sort({ createdAt: -1 });
+      .select(
+        "firstName lastName email phone avatar skills aiScore status createdAt"
+      )
+      .sort({ createdAt: -1 });
 
-    logger.info(`Found ${candidates.length} candidates without pipeline for job ${jobId}`);
+    logger.info(
+      `Found ${candidates.length} candidates without pipeline for job ${jobId}`
+    );
 
     successResponse(
       res,
@@ -630,7 +679,7 @@ export const getCandidateStats = asyncHandler(
           byStatus: [
             {
               $group: {
-                _id: '$status',
+                _id: "$status",
                 count: { $sum: 1 },
               },
             },
@@ -638,7 +687,7 @@ export const getCandidateStats = asyncHandler(
           byStage: [
             {
               $group: {
-                _id: '$currentPipelineStageId',
+                _id: "$currentPipelineStageId",
                 count: { $sum: 1 },
               },
             },
@@ -647,16 +696,16 @@ export const getCandidateStats = asyncHandler(
             {
               $group: {
                 _id: null,
-                avgOverallScore: { $avg: '$aiScore.overallScore' },
-                avgSkillsMatch: { $avg: '$aiScore.skillsMatch' },
-                avgExperienceMatch: { $avg: '$aiScore.experienceMatch' },
-                avgEducationMatch: { $avg: '$aiScore.educationMatch' },
+                avgOverallScore: { $avg: "$aiScore.overallScore" },
+                avgSkillsMatch: { $avg: "$aiScore.skillsMatch" },
+                avgExperienceMatch: { $avg: "$aiScore.experienceMatch" },
+                avgEducationMatch: { $avg: "$aiScore.educationMatch" },
               },
             },
           ],
           total: [
             {
-              $count: 'count',
+              $count: "count",
             },
           ],
         },
@@ -681,7 +730,7 @@ export const getCandidateStats = asyncHandler(
       },
     };
 
-    successResponse(res, result, 'Candidate statistics retrieved successfully');
+    successResponse(res, result, "Candidate statistics retrieved successfully");
   }
 );
 
@@ -690,17 +739,17 @@ export const getCandidateStats = asyncHandler(
  */
 export const getTopCandidates = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const { jobId, limit = '10' } = req.query;
+    const { jobId, limit = "10" } = req.query;
 
-    const filter: any = { status: 'active' };
+    const filter: any = { status: "active" };
     if (jobId) filter.jobIds = jobId;
 
     const candidates = await Candidate.find(filter)
-      .populate('jobIds', 'title location')
-      .sort({ 'aiScore.overallScore': -1 })
+      .populate("jobIds", "title location")
+      .sort({ "aiScore.overallScore": -1 })
       .limit(parseInt(limit as string, 10));
 
-    successResponse(res, candidates, 'Top candidates retrieved successfully');
+    successResponse(res, candidates, "Top candidates retrieved successfully");
   }
 );
 
@@ -710,7 +759,7 @@ export const getTopCandidates = asyncHandler(
  */
 export const getDashboardAnalytics = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const { days = '90' } = req.query;
+    const { days = "90" } = req.query;
     const daysNum = parseInt(days as string, 10);
 
     // Calculate date range
@@ -722,17 +771,17 @@ export const getDashboardAnalytics = asyncHandler(
     const analytics = await Candidate.aggregate([
       {
         $match: {
-          createdAt: { $gte: startDate, $lte: endDate }
-        }
+          createdAt: { $gte: startDate, $lte: endDate },
+        },
       },
       {
         $group: {
           _id: {
             date: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-            source: "$source"
+            source: "$source",
           },
-          count: { $sum: 1 }
-        }
+          count: { $sum: 1 },
+        },
       },
       {
         $group: {
@@ -741,13 +790,13 @@ export const getDashboardAnalytics = asyncHandler(
           sourceBreakdown: {
             $push: {
               source: "$_id.source",
-              count: "$count"
-            }
-          }
-        }
+              count: "$count",
+            },
+          },
+        },
       },
       {
-        $sort: { _id: 1 }
+        $sort: { _id: 1 },
       },
       {
         $project: {
@@ -761,14 +810,14 @@ export const getDashboardAnalytics = asyncHandler(
                     input: "$sourceBreakdown",
                     as: "item",
                     cond: {
-                      $eq: ["$$item.source", "direct_submission"]
-                    }
-                  }
+                      $eq: ["$$item.source", "direct_submission"],
+                    },
+                  },
                 },
                 as: "filtered",
-                in: "$$filtered.count"
-              }
-            }
+                in: "$$filtered.count",
+              },
+            },
           },
           manualImports: {
             $sum: {
@@ -778,14 +827,14 @@ export const getDashboardAnalytics = asyncHandler(
                     input: "$sourceBreakdown",
                     as: "item",
                     cond: {
-                      $eq: ["$$item.source", "manual_import"]
-                    }
-                  }
+                      $eq: ["$$item.source", "manual_import"],
+                    },
+                  },
                 },
                 as: "filtered",
-                in: "$$filtered.count"
-              }
-            }
+                in: "$$filtered.count",
+              },
+            },
           },
           emailApplications: {
             $sum: {
@@ -795,20 +844,24 @@ export const getDashboardAnalytics = asyncHandler(
                     input: "$sourceBreakdown",
                     as: "item",
                     cond: {
-                      $in: ["$$item.source", ["email", "email_application"]]
-                    }
-                  }
+                      $in: ["$$item.source", ["email", "email_application"]],
+                    },
+                  },
                 },
                 as: "filtered",
-                in: "$$filtered.count"
-              }
-            }
+                in: "$$filtered.count",
+              },
+            },
           },
-          _id: 0
-        }
-      }
+          _id: 0,
+        },
+      },
     ]);
 
-    successResponse(res, analytics, 'Dashboard analytics retrieved successfully');
+    successResponse(
+      res,
+      analytics,
+      "Dashboard analytics retrieved successfully"
+    );
   }
 );

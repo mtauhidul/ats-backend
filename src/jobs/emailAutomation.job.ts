@@ -1,25 +1,25 @@
-import cron from 'node-cron';
-import { EmailAccount, Job, Application, SystemSettings } from '../models';
-import imapService from '../services/imap.service';
-import { createApplicationWithParsing } from '../services/application.service';
-import { parseResumeWithFallback } from '../services/enhancedResumeParser.service';
+import cron from "node-cron";
+import { config } from "../config";
+import { Application, EmailAccount, Job, SystemSettings } from "../models";
+import { createApplicationWithParsing } from "../services/application.service";
+import { parseResumeWithFallback } from "../services/enhancedResumeParser.service";
+import imapService from "../services/imap.service";
+import logger from "../utils/logger";
 import {
+  extractVideoAttachments,
   uploadVideoToCloudinary,
   validateVideoSize,
-  extractVideoAttachments
-} from '../utils/videoHandler';
-import logger from '../utils/logger';
-import { config } from '../config';
+} from "../utils/videoHandler";
 
 /**
  * Email Automation Cron Job
- * 
+ *
  * Simplified workflow aligned with manual import:
  * 1. Collects emails with resumes and video introductions
  * 2. Uploads files to Cloudinary
  * 3. Creates application (same as manual import)
  * 4. Application creation handles: AI validation, duplicate check, parsing
- * 
+ *
  * Features:
  * ✅ Text extraction for AI validation (pdf-parse → pdf2json fallback)
  * ✅ Video attachment support (mp4, mov, avi, webm, etc.)
@@ -35,7 +35,7 @@ class EmailAutomationJob {
   private isRunning = false;
   private cronJob: cron.ScheduledTask | null = null;
   // Remove hardcoded isEnabled - will read from database
-  
+
   // Stats tracking
   private stats = {
     totalEmailsProcessed: 0,
@@ -58,7 +58,7 @@ class EmailAutomationJob {
       const settings = await SystemSettings.getSettings();
       return settings.emailAutomationEnabled;
     } catch (error) {
-      logger.error('Failed to check automation status:', error);
+      logger.error("Failed to check automation status:", error);
       return false; // Fail safe - don't run if we can't check status
     }
   }
@@ -67,37 +67,41 @@ class EmailAutomationJob {
    * Start the cron job
    */
   async start(): Promise<void> {
-    const interval = config.email.checkInterval || '*/15 * * * *';
+    const interval = config.email.checkInterval || "*/15 * * * *";
 
     this.cronJob = cron.schedule(interval, async () => {
       const enabled = await this.isEnabled();
       if (enabled) {
         await this.processEmails();
       } else {
-        logger.info('Email automation is disabled in settings, skipping cycle');
+        logger.info("Email automation is disabled in settings, skipping cycle");
       }
     });
 
     logger.info(`📧 Email automation cron job started (interval: ${interval})`);
-    
+
     // Check database status before running on startup
     const enabled = await this.isEnabled();
-    logger.info(`📧 Email automation status from database: ${enabled ? 'ENABLED' : 'DISABLED'}`);
-    
+    logger.info(
+      `📧 Email automation status from database: ${enabled ? "ENABLED" : "DISABLED"}`
+    );
+
     if (enabled) {
-      logger.info('📧 Email automation will run initial check in 5 seconds...');
+      logger.info("📧 Email automation will run initial check in 5 seconds...");
       // Run immediately on startup if enabled
       setTimeout(() => {
-        this.isEnabled().then(stillEnabled => {
+        this.isEnabled().then((stillEnabled) => {
           if (stillEnabled) {
-            this.processEmails().catch(err => {
-              logger.error('Initial email processing failed:', err);
+            this.processEmails().catch((err) => {
+              logger.error("Initial email processing failed:", err);
             });
           }
         });
       }, 5000);
     } else {
-      logger.info('📧 Email automation is disabled. Use the admin panel to enable it.');
+      logger.info(
+        "📧 Email automation is disabled. Use the admin panel to enable it."
+      );
     }
   }
 
@@ -107,7 +111,7 @@ class EmailAutomationJob {
   stop(): void {
     if (this.cronJob) {
       this.cronJob.stop();
-      logger.info('📧 Email automation cron job stopped');
+      logger.info("📧 Email automation cron job stopped");
     }
   }
 
@@ -117,9 +121,9 @@ class EmailAutomationJob {
   async enable(userId?: string): Promise<void> {
     try {
       await SystemSettings.setEmailAutomation(true, userId as any);
-      logger.info('📧 Email automation enabled and saved to database');
+      logger.info("📧 Email automation enabled and saved to database");
     } catch (error) {
-      logger.error('Failed to enable email automation:', error);
+      logger.error("Failed to enable email automation:", error);
       throw error;
     }
   }
@@ -130,9 +134,9 @@ class EmailAutomationJob {
   async disable(userId?: string): Promise<void> {
     try {
       await SystemSettings.setEmailAutomation(false, userId as any);
-      logger.info('📧 Email automation disabled and saved to database');
+      logger.info("📧 Email automation disabled and saved to database");
     } catch (error) {
-      logger.error('Failed to disable email automation:', error);
+      logger.error("Failed to disable email automation:", error);
       throw error;
     }
   }
@@ -153,7 +157,7 @@ class EmailAutomationJob {
    * Manually trigger email processing (for testing)
    */
   async triggerManual(): Promise<void> {
-    logger.info('📧 Manually triggering email automation...');
+    logger.info("📧 Manually triggering email automation...");
     await this.processEmails();
   }
 
@@ -162,18 +166,21 @@ class EmailAutomationJob {
    * @param email - Candidate email
    * @param jobId - Job ID (null for unassigned applications)
    */
-  private async isDuplicate(email: string, jobId: string | null = null): Promise<boolean> {
+  private async isDuplicate(
+    email: string,
+    jobId: string | null = null
+  ): Promise<boolean> {
     try {
       if (!email) return false;
-      
+
       // Check for exact match: same email + same jobId (including null)
-      const existing = await Application.findOne({ 
+      const existing = await Application.findOne({
         email: email.toLowerCase().trim(),
-        jobId: jobId || null // Explicitly check for null if no jobId
+        jobId: jobId || null, // Explicitly check for null if no jobId
       });
       return !!existing;
     } catch (error: any) {
-      logger.error('Error checking duplicate:', error);
+      logger.error("Error checking duplicate:", error);
       return false;
     }
   }
@@ -188,7 +195,9 @@ class EmailAutomationJob {
   ): Promise<void> {
     return new Promise(async (resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error(`Email processing timeout after ${this.EMAIL_TIMEOUT}ms`));
+        reject(
+          new Error(`Email processing timeout after ${this.EMAIL_TIMEOUT}ms`)
+        );
       }, this.EMAIL_TIMEOUT);
 
       try {
@@ -212,50 +221,64 @@ class EmailAutomationJob {
   ): Promise<void> {
     // Handle both ParsedMail format (from.value[0].address) and EmailMessage format (from as string)
     let fromEmail: string | undefined;
-    let fromName: string = 'Unknown';
-    
-    if (typeof email.from === 'string') {
+    let fromName: string = "Unknown";
+
+    if (typeof email.from === "string") {
       // IMAP service format: "Name <email@example.com>" or just "email@example.com"
-      const emailMatch = email.from.match(/<([^>]+)>/) || email.from.match(/([^\s<>]+@[^\s<>]+)/);
+      const emailMatch =
+        email.from.match(/<([^>]+)>/) ||
+        email.from.match(/([^\s<>]+@[^\s<>]+)/);
       fromEmail = emailMatch ? emailMatch[1] : undefined;
       const nameMatch = email.from.match(/^"?([^"<]+)"?\s*</);
-      fromName = nameMatch ? nameMatch[1].trim() : (fromEmail ? fromEmail.split('@')[0] : 'Unknown');
+      fromName = nameMatch
+        ? nameMatch[1].trim()
+        : fromEmail
+          ? fromEmail.split("@")[0]
+          : "Unknown";
     } else if (email.from?.value?.[0]) {
       // mailparser format
       fromEmail = email.from.value[0].address;
-      fromName = email.from.value[0].name || 'Unknown';
+      fromName = email.from.value[0].name || "Unknown";
     }
-    
-    const subject = email.subject || 'No Subject';
-    
-    logger.info(`\n${'='.repeat(80)}`);
-    logger.info(`📧 Processing email from: ${fromName} <${fromEmail || 'no-email'}>`);
+
+    const subject = email.subject || "No Subject";
+
+    logger.info(`\n${"=".repeat(80)}`);
+    logger.info(
+      `📧 Processing email from: ${fromName} <${fromEmail || "no-email"}>`
+    );
     logger.info(`   Subject: ${subject}`);
     logger.info(`   Attachments: ${email.attachments?.length || 0}`);
-    
+
     // Skip if no sender email
     if (!fromEmail) {
       logger.warn(`⏭️ SKIPPING: No sender email address`);
       this.stats.totalEmailsProcessed++;
       return;
     }
-    
+
     // Check for duplicate BEFORE processing attachments
     // Pass job ID to check for exact duplicate (same email + same job)
     const jobId = job?._id?.toString() || null;
     if (await this.isDuplicate(fromEmail, jobId)) {
       if (jobId) {
-        logger.warn(`⏭️ SKIPPING: Application already exists for ${fromEmail} for this job`);
+        logger.warn(
+          `⏭️ SKIPPING: Application already exists for ${fromEmail} for this job`
+        );
       } else {
-        logger.warn(`⏭️ SKIPPING: Unassigned application already exists for ${fromEmail}`);
-        logger.warn(`   Tip: Assign the existing application to a job or delete it to process new resumes from this email.`);
+        logger.warn(
+          `⏭️ SKIPPING: Unassigned application already exists for ${fromEmail}`
+        );
+        logger.warn(
+          `   Tip: Assign the existing application to a job or delete it to process new resumes from this email.`
+        );
       }
       this.stats.totalEmailsProcessed++;
       return;
     }
 
     if (!email.attachments || email.attachments.length === 0) {
-      logger.info('⏭️ No attachments, skipping');
+      logger.info("⏭️ No attachments, skipping");
       this.stats.totalEmailsProcessed++;
       return;
     }
@@ -263,7 +286,8 @@ class EmailAutomationJob {
     // Filter out invoice/receipt files
     const nonInvoiceAttachments = email.attachments.filter((att: any) => {
       const filename = att.filename.toLowerCase();
-      const isInvoice = /invoice|receipt|statement|bill|order|confirmation/i.test(filename);
+      const isInvoice =
+        /invoice|receipt|statement|bill|order|confirmation/i.test(filename);
       if (isInvoice) {
         logger.info(`⏭️ Skipping invoice/receipt file: ${att.filename}`);
       }
@@ -271,7 +295,7 @@ class EmailAutomationJob {
     });
 
     if (nonInvoiceAttachments.length === 0) {
-      logger.info('⏭️ No resume attachments, only invoices/receipts');
+      logger.info("⏭️ No resume attachments, only invoices/receipts");
       this.stats.totalEmailsProcessed++;
       return;
     }
@@ -279,9 +303,11 @@ class EmailAutomationJob {
     // Separate resume and video attachments
     const resumeAttachments = nonInvoiceAttachments.filter((att: any) => {
       const filename = att.filename.toLowerCase();
-      return filename.endsWith('.pdf') || 
-             filename.endsWith('.doc') || 
-             filename.endsWith('.docx');
+      return (
+        filename.endsWith(".pdf") ||
+        filename.endsWith(".doc") ||
+        filename.endsWith(".docx")
+      );
     });
 
     const videoAttachmentsData = extractVideoAttachments(nonInvoiceAttachments);
@@ -290,7 +316,7 @@ class EmailAutomationJob {
     logger.info(`   🎥 Video files: ${videoAttachmentsData.length}`);
 
     if (resumeAttachments.length === 0) {
-      logger.info('⏭️ No resume attachments found');
+      logger.info("⏭️ No resume attachments found");
       this.stats.totalEmailsProcessed++;
       return;
     }
@@ -306,30 +332,38 @@ class EmailAutomationJob {
         attachment.content,
         attachment.filename
       );
-      logger.info(`✅ Step 1: Extracted ${resumeText.length} characters using ${method}`);
+      logger.info(
+        `✅ Step 1: Extracted ${resumeText.length} characters using ${method}`
+      );
 
       // Step 2: Upload video if present
       let videoUrl: string | undefined;
       if (videoAttachmentsData.length > 0) {
         logger.info(`Step 2: Processing video attachments...`);
-        
+
         for (const videoData of videoAttachmentsData) {
           try {
             // Validate video size
-            const sizeValidation = validateVideoSize(videoData.attachment.content);
+            const sizeValidation = validateVideoSize(
+              videoData.attachment.content
+            );
             if (!sizeValidation.valid) {
-              logger.warn(`⚠️ Skipping video ${videoData.attachment.filename}: ${sizeValidation.error}`);
+              logger.warn(
+                `⚠️ Skipping video ${videoData.attachment.filename}: ${sizeValidation.error}`
+              );
               continue;
             }
 
-            logger.info(`   📹 Uploading ${videoData.attachment.filename} (${sizeValidation.sizeMB}MB, ${videoData.category})`);
+            logger.info(
+              `   📹 Uploading ${videoData.attachment.filename} (${sizeValidation.sizeMB}MB, ${videoData.category})`
+            );
             const videoUpload = await uploadVideoToCloudinary(
               videoData.attachment.content,
               videoData.attachment.filename
             );
 
             // Use the first video introduction as videoIntroUrl
-            if (videoData.category === 'introduction' && !videoUrl) {
+            if (videoData.category === "introduction" && !videoUrl) {
               videoUrl = videoUpload.url;
               logger.info(`✅ Step 2: Video intro uploaded to ${videoUrl}`);
             } else {
@@ -345,43 +379,45 @@ class EmailAutomationJob {
       // Step 3: Create application using Direct Apply service
       // This handles: parsing (Affinda/OpenAI), Cloudinary upload, AI validation, duplicate check
       logger.info(`Step 3: Creating application with Direct Apply service...`);
-      
+
       // Split name into first and last
-      const nameParts = fromName.split(' ');
-      const firstName = nameParts[0] || 'Unknown';
-      const lastName = nameParts.slice(1).join(' ') || '';
+      const nameParts = fromName.split(" ");
+      const firstName = nameParts[0] || "Unknown";
+      const lastName = nameParts.slice(1).join(" ") || "";
 
       const application = await createApplicationWithParsing({
         // Resume file
         resumeBuffer: attachment.content,
         resumeFilename: attachment.filename,
-        resumeMimetype: attachment.contentType || 'application/pdf',
-        
+        resumeMimetype: attachment.contentType || "application/pdf",
+
         // Candidate info from email (will be overwritten by parsed data if available)
         email: fromEmail,
         firstName,
         lastName,
-        
+
         // Pre-extracted text for AI validation
         resumeRawText: resumeText,
-        
+
         // Video (if present)
         videoIntroUrl: videoUrl,
-        
+
         // Job association (if found)
         jobId: job?._id,
         clientId: job?.clientId,
-        
+
         // Source tracking
-        source: 'email_automation',
+        source: "email_automation",
         sourceEmailAccountId: account._id,
       });
 
       this.stats.totalCandidatesCreated++;
       this.stats.totalEmailsProcessed++;
 
-      const jobInfo = job ? `for ${job.title}` : '(unassigned)';
-      logger.info(`\n✅ COMPLETE: Application created for ${application.firstName} ${application.lastName} ${jobInfo}`);
+      const jobInfo = job ? `for ${job.title}` : "(unassigned)";
+      logger.info(
+        `\n✅ COMPLETE: Application created for ${application.firstName} ${application.lastName} ${jobInfo}`
+      );
       logger.info(`   Application ID: ${application._id}`);
       logger.info(`   Email: ${application.email}`);
       logger.info(`   Resume: ${application.resumeUrl}`);
@@ -389,34 +425,40 @@ class EmailAutomationJob {
         logger.info(`   Video: ${videoUrl}`);
       }
       if (application.isValidResume !== null) {
-        logger.info(`   AI Validation: ${application.isValidResume ? '✓ VALID' : '✗ INVALID'} (${application.validationScore}/100)`);
+        logger.info(
+          `   AI Validation: ${application.isValidResume ? "✓ VALID" : "✗ INVALID"} (${application.validationScore}/100)`
+        );
         logger.info(`   Reason: ${application.validationReason}`);
       }
       if (application.parsedData) {
-        logger.info(`   Parsed: ${application.parsedData.skills?.length || 0} skills, ${application.parsedData.experience?.length || 0} experiences`);
+        logger.info(
+          `   Parsed: ${application.parsedData.skills?.length || 0} skills, ${application.parsedData.experience?.length || 0} experiences`
+        );
       }
-
     } catch (error: any) {
       this.stats.totalErrors++;
-      
+
       // Check if this is a duplicate application error
-      const isDuplicateError = error.message?.includes('Application already exists') || 
-                               error.code === 11000;
-      
+      const isDuplicateError =
+        error.message?.includes("Application already exists") ||
+        error.code === 11000;
+
       if (isDuplicateError) {
         logger.warn(`⚠️ SKIPPED: Duplicate application from ${fromEmail}`);
         logger.warn(`   Reason: ${error.message}`);
-        logger.warn(`   This resume was already processed. The email will be marked as read.`);
+        logger.warn(
+          `   This resume was already processed. The email will be marked as read.`
+        );
       } else {
         logger.error(`\n❌ FAILED: Error processing email from ${fromEmail}:`, {
           error: error.message,
           stack: error.stack,
           fromEmail,
           subject,
-          filename: attachment.filename
+          filename: attachment.filename,
         });
       }
-      
+
       throw error;
     }
   }
@@ -426,7 +468,9 @@ class EmailAutomationJob {
    */
   async processEmails(): Promise<void> {
     if (this.isRunning) {
-      logger.warn('⚠️ Email automation is already running, skipping this cycle');
+      logger.warn(
+        "⚠️ Email automation is already running, skipping this cycle"
+      );
       return;
     }
 
@@ -434,9 +478,9 @@ class EmailAutomationJob {
     const startTime = Date.now();
     this.stats.lastRunAt = new Date();
 
-    logger.info('\n' + '='.repeat(80));
-    logger.info('🚀 EMAIL AUTOMATION CYCLE STARTED');
-    logger.info('='.repeat(80));
+    logger.info("\n" + "=".repeat(80));
+    logger.info("🚀 EMAIL AUTOMATION CYCLE STARTED");
+    logger.info("=".repeat(80));
 
     try {
       // Fetch active email accounts
@@ -444,7 +488,7 @@ class EmailAutomationJob {
       logger.info(`📊 Found ${accounts.length} active email account(s)`);
 
       if (accounts.length === 0) {
-        logger.info('⏭️ No active email accounts configured');
+        logger.info("⏭️ No active email accounts configured");
         return;
       }
 
@@ -473,7 +517,9 @@ class EmailAutomationJob {
           if (job) {
             logger.info(`   📋 Associated with job: ${job.title}`);
           } else {
-            logger.info(`   ⚠️ No active job associated, applications will be unassigned`);
+            logger.info(
+              `   ⚠️ No active job associated, applications will be unassigned`
+            );
           }
 
           // Step 2: Process emails in batches
@@ -482,22 +528,36 @@ class EmailAutomationJob {
             const batchNum = Math.floor(i / this.BATCH_SIZE) + 1;
             const totalBatches = Math.ceil(emails.length / this.BATCH_SIZE);
 
-            logger.info(`\n📦 Processing batch ${batchNum}/${totalBatches} (${batch.length} emails)`);
+            logger.info(
+              `\n📦 Processing batch ${batchNum}/${totalBatches} (${batch.length} emails)`
+            );
 
             // Process batch concurrently with timeout protection
             const results = await Promise.allSettled(
-              batch.map(email => this.processEmailWithTimeout(email, account, job))
+              batch.map((email) =>
+                this.processEmailWithTimeout(email, account, job)
+              )
             );
 
             // Log batch results
-            const successful = results.filter(r => r.status === 'fulfilled').length;
-            const failed = results.filter(r => r.status === 'rejected').length;
-            logger.info(`   ✅ Successful: ${successful}, ❌ Failed: ${failed}`);
+            const successful = results.filter(
+              (r) => r.status === "fulfilled"
+            ).length;
+            const failed = results.filter(
+              (r) => r.status === "rejected"
+            ).length;
+            logger.info(
+              `   ✅ Successful: ${successful}, ❌ Failed: ${failed}`
+            );
 
             // Wait between batches
             if (i + this.BATCH_SIZE < emails.length) {
-              logger.info(`   ⏳ Waiting ${this.BATCH_DELAY}ms before next batch...`);
-              await new Promise(resolve => setTimeout(resolve, this.BATCH_DELAY));
+              logger.info(
+                `   ⏳ Waiting ${this.BATCH_DELAY}ms before next batch...`
+              );
+              await new Promise((resolve) =>
+                setTimeout(resolve, this.BATCH_DELAY)
+              );
             }
           }
 
@@ -505,7 +565,6 @@ class EmailAutomationJob {
           account.lastChecked = new Date();
           await account.save();
           logger.info(`   ✅ Updated lastChecked for ${account.email}`);
-
         } catch (error: any) {
           logger.error(`❌ Error processing account ${account.email}:`, error);
           this.stats.totalErrors++;
@@ -515,18 +574,19 @@ class EmailAutomationJob {
       const duration = Date.now() - startTime;
       this.stats.lastRunDuration = duration;
 
-      logger.info('\n' + '='.repeat(80));
-      logger.info('🏁 EMAIL AUTOMATION CYCLE COMPLETED');
-      logger.info('='.repeat(80));
+      logger.info("\n" + "=".repeat(80));
+      logger.info("🏁 EMAIL AUTOMATION CYCLE COMPLETED");
+      logger.info("=".repeat(80));
       logger.info(`📊 Stats:`);
       logger.info(`   Duration: ${(duration / 1000).toFixed(2)}s`);
       logger.info(`   Emails processed: ${this.stats.totalEmailsProcessed}`);
-      logger.info(`   Candidates created: ${this.stats.totalCandidatesCreated}`);
+      logger.info(
+        `   Candidates created: ${this.stats.totalCandidatesCreated}`
+      );
       logger.info(`   Errors: ${this.stats.totalErrors}`);
-      logger.info('='.repeat(80) + '\n');
-
+      logger.info("=".repeat(80) + "\n");
     } catch (error: any) {
-      logger.error('❌ Email automation cycle failed:', error);
+      logger.error("❌ Email automation cycle failed:", error);
       this.stats.totalErrors++;
     } finally {
       this.isRunning = false;

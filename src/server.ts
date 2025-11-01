@@ -1,15 +1,15 @@
-import app from './app';
-import { config, validateConfig } from './config';
-import { connectDatabase } from './config/database';
-import emailAutomationJob from './jobs/emailAutomation.job';
-import { seedEmailTemplates } from './seeds/emailTemplates.seed';
-import logger from './utils/logger';
+import app from "./app";
+import { config, validateConfig } from "./config";
+import { connectDatabase } from "./config/database";
+import emailAutomationJob from "./jobs/emailAutomation.job";
+import { seedEmailTemplates } from "./seeds/emailTemplates.seed";
+import logger from "./utils/logger";
 
 // Validate environment variables
 try {
   validateConfig();
 } catch (error) {
-  logger.error('Configuration validation failed:', error);
+  logger.error("Configuration validation failed:", error);
   process.exit(1);
 }
 
@@ -45,27 +45,26 @@ async function startServer() {
     // Graceful shutdown
     const shutdown = async (signal: string) => {
       logger.info(`\n${signal} received. Starting graceful shutdown...`);
-      
+
       // Stop email automation job
       emailAutomationJob.stop();
-      
+
       server.close(() => {
-        logger.info('HTTP server closed');
+        logger.info("HTTP server closed");
         process.exit(0);
       });
 
       // Force shutdown after 10 seconds
       setTimeout(() => {
-        logger.error('Forced shutdown after timeout');
+        logger.error("Forced shutdown after timeout");
         process.exit(1);
       }, 10000);
     };
 
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
-
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
   } catch (error) {
-    logger.error('Failed to start server:', error);
+    logger.error("Failed to start server:", error);
     process.exit(1);
   }
 }

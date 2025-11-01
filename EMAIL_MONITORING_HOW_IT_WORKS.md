@@ -103,13 +103,13 @@
 ### When You Click "Start Monitoring"
 
 1. **Frontend Button Click**
+
    ```tsx
-   <Button onClick={startAutomation}>
-     Start Monitoring
-   </Button>
+   <Button onClick={startAutomation}>Start Monitoring</Button>
    ```
 
 2. **API Call to Backend**
+
    ```typescript
    const response = await authenticatedFetch("/email-automation/enable", {
      method: "POST",
@@ -117,15 +117,17 @@
    ```
 
 3. **Backend Route Receives Request**
+
    ```typescript
-   router.post('/automation/enable', async (req, res) => {
-     const userId = req.user?.id;  // Who clicked the button
+   router.post("/automation/enable", async (req, res) => {
+     const userId = req.user?.id; // Who clicked the button
      await emailAutomationJob.enable(userId);
      res.json({ success: true });
    });
    ```
 
 4. **Enable Method Saves to Database**
+
    ```typescript
    async enable(userId?: string): Promise<void> {
      await SystemSettings.setEmailAutomation(true, userId);
@@ -133,6 +135,7 @@
    ```
 
 5. **Database is Updated**
+
    ```javascript
    MongoDB systemsettings collection:
    {
@@ -144,9 +147,10 @@
 
 6. **Cron Job Reads Database Every 15 Minutes**
    ```typescript
-   cron.schedule('*/15 * * * *', async () => {
+   cron.schedule("*/15 * * * *", async () => {
      const settings = await SystemSettings.getSettings();
-     if (settings.emailAutomationEnabled) {  // ← Reads the flag
+     if (settings.emailAutomationEnabled) {
+       // ← Reads the flag
        await this.processEmails();
      }
    });
@@ -169,7 +173,7 @@ The backend knows because:
 POST /api/emails/automation/start      ← Enables automation
 POST /api/emails/automation/enable     ← Same as above (alias)
 
-POST /api/emails/automation/stop       ← Disables automation  
+POST /api/emails/automation/stop       ← Disables automation
 POST /api/emails/automation/disable    ← Same as above (alias)
 
 GET  /api/emails/automation/status     ← Check current status

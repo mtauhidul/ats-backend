@@ -19,6 +19,7 @@ import notificationRoutes from './notification.routes';
 import messageRoutes from './message.routes';
 import webhookRoutes from './webhook.routes';
 import activityRoutes from './activity.routes';
+import settingsRoutes from './settings.routes';
 
 const router = Router();
 
@@ -33,6 +34,7 @@ router.use('/notifications', notificationRoutes);
 router.use('/messages', messageRoutes);
 router.use('/email-accounts', emailAccountRoutes);
 router.use('/email-automation', emailAutomationRoutes);
+router.use('/settings', settingsRoutes);
 router.use('/resumes', resumeRoutes);
 router.use('/applications', applicationRoutes);
 router.use('/candidates', candidateRoutes);

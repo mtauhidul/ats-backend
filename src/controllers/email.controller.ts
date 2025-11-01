@@ -30,10 +30,22 @@ export const getEmails = asyncHandler(
     // Build filter
     const filter: any = {};
     if (direction) filter.direction = direction;
-    if (candidateId) filter.candidateId = candidateId;
-    if (applicationId) filter.applicationId = applicationId;
-    if (jobId) filter.jobId = jobId;
     if (status) filter.status = status;
+    
+    // If both candidateId and jobId are provided, use OR logic
+    // This allows emails linked to either the candidate OR the job to be shown
+    if (candidateId && jobId) {
+      filter.$or = [
+        { candidateId: candidateId },
+        { jobId: jobId },
+        { $and: [{ candidateId: candidateId }, { jobId: jobId }] }
+      ];
+    } else {
+      if (candidateId) filter.candidateId = candidateId;
+      if (jobId) filter.jobId = jobId;
+    }
+    
+    if (applicationId) filter.applicationId = applicationId;
 
     if (search) {
       filter.$or = [
