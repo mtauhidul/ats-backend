@@ -116,7 +116,7 @@ export const getMessages = async (req: Request, res: Response) => {
 /**
  * Get a single message by ID
  */
-export const getMessageById = async (req: Request, res: Response) => {
+export const getMessageById = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const userId = req.userId;
@@ -127,15 +127,16 @@ export const getMessageById = async (req: Request, res: Response) => {
     }).lean();
 
     if (!message || !message.senderId || !message.recipientId) {
-      return res.status(404).json({
+      res.status(404).json({
         status: "error",
         message: "Message not found",
       });
+      return;
     }
 
     const transformedMessage = {
       ...message,
-      id: message._id.toString(),
+      id: (message._id as any).toString(),
       senderId: message.senderId.toString(),
       recipientId: message.recipientId.toString(),
       _id: undefined,
@@ -158,16 +159,17 @@ export const getMessageById = async (req: Request, res: Response) => {
 /**
  * Send a new message
  */
-export const sendMessage = async (req: Request, res: Response) => {
+export const sendMessage = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.userId;
     const user = req.user;
 
     if (!user) {
-      return res.status(401).json({
+      res.status(401).json({
         status: "error",
         message: "User not authenticated",
       });
+      return;
     }
 
     const {
@@ -181,10 +183,11 @@ export const sendMessage = async (req: Request, res: Response) => {
 
     // Validate required fields
     if (!recipientId || !messageText) {
-      return res.status(400).json({
+      res.status(400).json({
         status: "error",
         message: "recipientId and message are required",
       });
+      return;
     }
 
     // Convert string IDs to ObjectId
@@ -212,9 +215,9 @@ export const sendMessage = async (req: Request, res: Response) => {
 
     const transformedMessage = {
       ...message.toObject(),
-      id: message._id.toString(),
-      senderId: message.senderId.toString(),
-      recipientId: message.recipientId.toString(),
+      id: (message._id as any).toString(),
+      senderId: message.senderId?.toString() || '',
+      recipientId: message.recipientId?.toString() || '',
       _id: undefined,
     };
 
@@ -237,7 +240,7 @@ export const sendMessage = async (req: Request, res: Response) => {
 /**
  * Update message (mark as read)
  */
-export const updateMessage = async (req: Request, res: Response) => {
+export const updateMessage = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const userId = req.userId;
@@ -251,15 +254,16 @@ export const updateMessage = async (req: Request, res: Response) => {
     ).lean();
 
     if (!message || !message.senderId || !message.recipientId) {
-      return res.status(404).json({
+      res.status(404).json({
         status: "error",
         message: "Message not found or you are not the recipient",
       });
+      return;
     }
 
     const transformedMessage = {
       ...message,
-      id: message._id.toString(),
+      id: (message._id as any).toString(),
       senderId: message.senderId.toString(),
       recipientId: message.recipientId.toString(),
       _id: undefined,
@@ -282,7 +286,7 @@ export const updateMessage = async (req: Request, res: Response) => {
 /**
  * Delete a message
  */
-export const deleteMessage = async (req: Request, res: Response) => {
+export const deleteMessage = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const userId = req.userId;
@@ -294,10 +298,11 @@ export const deleteMessage = async (req: Request, res: Response) => {
     });
 
     if (!message) {
-      return res.status(404).json({
+      res.status(404).json({
         status: "error",
         message: "Message not found or you are not the sender",
       });
+      return;
     }
 
     res.status(200).json({
@@ -333,9 +338,9 @@ export const getConversationMessages = async (req: Request, res: Response) => {
       .filter((msg) => msg.senderId && msg.recipientId)
       .map((msg) => ({
         ...msg,
-        id: msg._id.toString(),
-        senderId: msg.senderId.toString(),
-        recipientId: msg.recipientId.toString(),
+        id: (msg._id as any).toString(),
+        senderId: msg.senderId!.toString(),
+        recipientId: msg.recipientId!.toString(),
         _id: undefined,
       }));
 

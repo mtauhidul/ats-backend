@@ -47,7 +47,7 @@ export const getNotifications = async (req: Request, res: Response) => {
 /**
  * Get a single notification by ID
  */
-export const getNotificationById = async (req: Request, res: Response) => {
+export const getNotificationById = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const userId = req.userId;
@@ -58,10 +58,11 @@ export const getNotificationById = async (req: Request, res: Response) => {
     }).lean();
 
     if (!notification) {
-      return res.status(404).json({
+      res.status(404).json({
         status: "error",
         message: "Notification not found",
       });
+      return;
     }
 
     const transformedNotification = {
@@ -130,7 +131,7 @@ export const createNotification = async (req: Request, res: Response) => {
 /**
  * Update notification (mark as read)
  */
-export const updateNotification = async (req: Request, res: Response) => {
+export const updateNotification = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const userId = req.userId;
@@ -143,10 +144,11 @@ export const updateNotification = async (req: Request, res: Response) => {
     ).lean();
 
     if (!notification) {
-      return res.status(404).json({
+      res.status(404).json({
         status: "error",
         message: "Notification not found",
       });
+      return;
     }
 
     const transformedNotification = {
@@ -172,7 +174,7 @@ export const updateNotification = async (req: Request, res: Response) => {
 /**
  * Delete a notification
  */
-export const deleteNotification = async (req: Request, res: Response) => {
+export const deleteNotification = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const userId = req.userId;
@@ -183,10 +185,11 @@ export const deleteNotification = async (req: Request, res: Response) => {
     });
 
     if (!notification) {
-      return res.status(404).json({
+      res.status(404).json({
         status: "error",
         message: "Notification not found",
       });
+      return;
     }
 
     res.status(200).json({
@@ -275,10 +278,11 @@ export const broadcastImportantNotice = async (req: Request, res: Response): Pro
     const users = await User.find({ isActive: true }).select('_id');
 
     if (users.length === 0) {
-      return res.status(404).json({
+      res.status(404).json({
         status: "error",
         message: "No active users found",
       });
+      return;
     }
 
     // Create notifications for all users

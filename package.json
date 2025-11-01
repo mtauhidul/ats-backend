@@ -24,7 +24,7 @@
   "author": "Arista Groups",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0"
+    "node": "20.x"
   },
   "dependencies": {
     "@affinda/affinda": "^7.7.0",
