@@ -7,6 +7,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "heroku-postbuild": "npm run build",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
     "test:integration": "ts-node tests/integration-test.ts",
