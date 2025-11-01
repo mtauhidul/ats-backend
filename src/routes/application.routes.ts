@@ -9,6 +9,7 @@ import {
   bulkUpdateStatus,
   bulkDeleteApplications,
   getApplicationStats,
+  getDashboardAnalytics,
 } from '../controllers/application.controller';
 import { authenticate, requireRole } from '../middleware/auth';
 import { validate } from '../middleware/validation';
@@ -78,6 +79,16 @@ router.get(
   '/stats',
   requireRole('recruiter', 'hiring_manager', 'admin'),
   getApplicationStats
+);
+
+/**
+ * @route   GET /api/applications/analytics/dashboard
+ * @desc    Get dashboard analytics (application trends by date)
+ * @access  All authenticated users
+ */
+router.get(
+  '/analytics/dashboard',
+  getDashboardAnalytics
 );
 
 /**

@@ -865,3 +865,116 @@ export const getApplicationStats = asyncHandler(
     successResponse(res, result, 'Application statistics retrieved successfully');
   }
 );
+
+/**
+ * Get dashboard analytics for applications
+ * Returns time-series data of applications by source type
+ */
+export const getDashboardAnalytics = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const { days = "90" } = req.query;
+    const daysNum = parseInt(days as string, 10);
+
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysNum);
+
+    // Optimized aggregation - count by source type in the aggregation pipeline
+    const analytics = await Application.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate, $lte: endDate },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+            source: "$source",
+          },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $group: {
+          _id: "$_id.date",
+          applications: { $sum: "$count" },
+          sourceBreakdown: {
+            $push: {
+              source: "$_id.source",
+              count: "$count",
+            },
+          },
+        },
+      },
+      {
+        $sort: { _id: 1 },
+      },
+      {
+        $project: {
+          date: "$_id",
+          applications: 1,
+          directSubmissions: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: "$sourceBreakdown",
+                    as: "item",
+                    cond: {
+                      $eq: ["$$item.source", "direct_apply"],
+                    },
+                  },
+                },
+                as: "filtered",
+                in: "$$filtered.count",
+              },
+            },
+          },
+          manualImports: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: "$sourceBreakdown",
+                    as: "item",
+                    cond: {
+                      $eq: ["$$item.source", "manual"],
+                    },
+                  },
+                },
+                as: "filtered",
+                in: "$$filtered.count",
+              },
+            },
+          },
+          emailApplications: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: "$sourceBreakdown",
+                    as: "item",
+                    cond: {
+                      $eq: ["$$item.source", "email_automation"],
+                    },
+                  },
+                },
+                as: "filtered",
+                in: "$$filtered.count",
+              },
+            },
+          },
+          _id: 0,
+        },
+      },
+    ]);
+
+    successResponse(
+      res,
+      analytics,
+      "Dashboard analytics retrieved successfully"
+    );
+  }
+);
