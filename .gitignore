@@ -43,3 +43,4 @@ temp/
 # Debug
 .cache/
 firebase-service-account.json
+firebase_config.json
