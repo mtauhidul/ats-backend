@@ -2,7 +2,8 @@ import Imap from 'imap';
 import { simpleParser, ParsedMail } from 'mailparser';
 import logger from '../utils/logger';
 import { InternalServerError } from '../utils/errors';
-import { IEmailAccount } from '../models/EmailAccount';
+import { IEmailAccount } from './firestore/emailAccount.service';
+import { decrypt } from '../utils/crypto';
 
 export interface EmailMessage {
   from: string;
@@ -52,7 +53,7 @@ class IMAPService {
         host: emailAccount.imapHost,
         port: emailAccount.imapPort,
         user: emailAccount.imapUser,
-        password: emailAccount.getDecryptedPassword(),
+        password: decrypt(emailAccount.imapPassword),
         tls: emailAccount.imapTls,
       });
 
@@ -154,7 +155,7 @@ class IMAPService {
         host: emailAccount.imapHost,
         port: emailAccount.imapPort,
         user: emailAccount.imapUser,
-        password: emailAccount.getDecryptedPassword(),
+        password: decrypt(emailAccount.imapPassword),
         tls: emailAccount.imapTls,
       });
 
@@ -194,7 +195,7 @@ class IMAPService {
         host: emailAccount.imapHost,
         port: emailAccount.imapPort,
         user: emailAccount.imapUser,
-        password: emailAccount.getDecryptedPassword(),
+        password: decrypt(emailAccount.imapPassword),
         tls: emailAccount.imapTls,
       });
 

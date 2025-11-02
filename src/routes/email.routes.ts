@@ -12,7 +12,7 @@ import {
   sendEmail,
   updateDraft,
 } from "../controllers/email.controller";
-import emailAutomationJob from "../jobs/emailAutomation.job";
+// import emailAutomationJob from "../jobs/emailAutomation.job"; // TODO: Reimplement with Firestore
 import { authenticate, requireRole } from "../middleware/auth";
 
 const router = express.Router();
@@ -128,11 +128,8 @@ router.delete("/:id", requireRole("admin"), deleteEmail);
 // EMAIL AUTOMATION ROUTES (for frontend Settings > Email Automation tab)
 // ============================================
 
-/**
- * @route   GET /api/emails/automation/status
- * @desc    Get email automation status
- * @access  Admin, Super Admin
- */
+// TODO: Re-implement email automation routes with Firestore
+/*
 router.get("/automation/status", requireRole("admin"), async (_req, res) => {
   try {
     const status = await emailAutomationJob.getStats();
@@ -149,11 +146,6 @@ router.get("/automation/status", requireRole("admin"), async (_req, res) => {
   }
 });
 
-/**
- * @route   POST /api/emails/automation/start
- * @desc    Enable/start email automation
- * @access  Admin, Super Admin
- */
 router.post("/automation/start", requireRole("admin"), async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -171,11 +163,6 @@ router.post("/automation/start", requireRole("admin"), async (req, res) => {
   }
 });
 
-/**
- * @route   POST /api/emails/automation/stop
- * @desc    Disable/stop email automation
- * @access  Admin, Super Admin
- */
 router.post("/automation/stop", requireRole("admin"), async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -193,11 +180,6 @@ router.post("/automation/stop", requireRole("admin"), async (req, res) => {
   }
 });
 
-/**
- * @route   POST /api/emails/automation/enable
- * @desc    Enable/start email automation (alias for /start)
- * @access  Admin, Super Admin
- */
 router.post("/automation/enable", requireRole("admin"), async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -215,11 +197,6 @@ router.post("/automation/enable", requireRole("admin"), async (req, res) => {
   }
 });
 
-/**
- * @route   POST /api/emails/automation/disable
- * @desc    Disable/stop email automation (alias for /stop)
- * @access  Admin, Super Admin
- */
 router.post("/automation/disable", requireRole("admin"), async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -237,11 +214,6 @@ router.post("/automation/disable", requireRole("admin"), async (req, res) => {
   }
 });
 
-/**
- * @route   POST /api/emails/automation/trigger
- * @desc    Manually trigger email processing
- * @access  Admin, Super Admin
- */
 router.post("/automation/trigger", requireRole("admin"), async (_req, res) => {
   try {
     await emailAutomationJob.triggerManual();
@@ -257,5 +229,6 @@ router.post("/automation/trigger", requireRole("admin"), async (_req, res) => {
     });
   }
 });
+*/
 
 export default router;

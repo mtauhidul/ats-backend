@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import { Client } from '../models';
+import { clientService, jobService, candidateService } from '../services/firestore';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
 import { NotFoundError, ValidationError as CustomValidationError, BadRequestError } from '../utils/errors';
 import logger from '../utils/logger';
@@ -14,30 +13,28 @@ import {
  * Calculate statistics for a client
  */
 async function calculateClientStatistics(clientId: string) {
-  const Job = mongoose.model('Job');
-  const Candidate = mongoose.model('Candidate');
-
   // Get all jobs for this client
-  const jobs = await Job.find({ clientId }).select('status');
+  const jobs = await jobService.findByClient(clientId);
   
   const totalJobs = jobs.length;
-  const activeJobs = jobs.filter((j: any) => j.status === 'open').length;
-  const closedJobs = jobs.filter((j: any) => j.status === 'closed').length;
-  const draftJobs = jobs.filter((j: any) => j.status === 'draft').length;
+  const activeJobs = jobs.filter(j => j.status === 'open').length;
+  const closedJobs = jobs.filter(j => j.status === 'closed').length;
+  const draftJobs = jobs.filter(j => j.status === 'draft').length;
 
   // Get all candidates for this client's jobs
-  const jobIds = jobs.map((j: any) => j._id);
-  const candidates = await Candidate.find({ 
-    jobIds: { $in: jobIds } 
-  }).select('status createdAt');
+  const jobIds = jobs.map(j => j.id!);
+  const allCandidates = await Promise.all(
+    jobIds.map(jobId => candidateService.findByJobId(jobId))
+  );
+  const candidates = allCandidates.flat();
 
   const totalCandidates = candidates.length;
-  const activeCandidates = candidates.filter((c: any) => 
-    ['active', 'interviewing', 'offered'].includes(c.status)
+  const activeCandidates = candidates.filter(c => 
+    ['active', 'interviewing', 'offered'].includes(c.status || '')
   ).length;
-  const hiredCandidates = candidates.filter((c: any) => c.status === 'hired').length;
-  const rejectedCandidates = candidates.filter((c: any) => 
-    ['rejected', 'withdrawn'].includes(c.status)
+  const hiredCandidates = candidates.filter(c => c.status === 'hired').length;
+  const rejectedCandidates = candidates.filter(c => 
+    ['rejected', 'withdrawn'].includes(c.status || '')
   ).length;
 
   // Calculate success rate
@@ -46,7 +43,7 @@ async function calculateClientStatistics(clientId: string) {
     : 0;
 
   // Calculate average time to hire (simplified - days from candidate creation to hired)
-  const hiredCandidates_list = candidates.filter((c: any) => c.status === 'hired');
+  const hiredCandidates_list = candidates.filter(c => c.status === 'hired');
   let averageTimeToHire = 0;
   if (hiredCandidates_list.length > 0) {
     const totalDays = hiredCandidates_list.reduce((sum: number, candidate: any) => {
@@ -78,21 +75,30 @@ export const createClient = asyncHandler(
     const data: CreateClientInput = req.body;
 
     // Check for duplicate client by companyName
-    const existingClient = await Client.findOne({ companyName: data.companyName });
+    const existingClients = await clientService.find([
+      { field: 'companyName', operator: '==', value: data.companyName }
+    ]);
 
-    if (existingClient) {
+    if (existingClients.length > 0) {
       throw new CustomValidationError(
         `Client already exists with name: ${data.companyName}`
       );
     }
 
     // Create client
-    const client = await Client.create({
+    const clientId = await clientService.create({
       ...data,
-      createdBy: req.user?._id,
-    });
+      createdBy: req.user?.id,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any);
 
-    logger.info(`Client created: ${client.companyName} by user ${req.user?._id}`);
+    const client = await clientService.findById(clientId);
+    if (!client) {
+      throw new Error('Failed to create client');
+    }
+
+    logger.info(`Client created: ${client.companyName} by user ${req.user?.id}`);
 
     successResponse(res, client, 'Client created successfully', 201);
   }
@@ -113,21 +119,42 @@ export const getClients = asyncHandler(
       sortOrder = 'desc',
     } = req.query as any as ListClientsQuery;
 
-    // Build filter
-    const filter: any = {};
-    if (isActive !== undefined) filter.isActive = isActive;
-    if (industry) filter.industry = { $regex: industry, $options: 'i' };
-
-    if (search) {
-      filter.$or = [
-        { companyName: { $regex: search, $options: 'i' } },
-        { contactEmail: { $regex: search, $options: 'i' } },
-        { contactPerson: { $regex: search, $options: 'i' } },
-      ];
+    // Build filters
+    const filters: any[] = [];
+    if (isActive !== undefined) {
+      filters.push({ field: 'isActive', operator: '==', value: isActive });
+    }
+    if (industry) {
+      filters.push({ field: 'industry', operator: '==', value: industry });
     }
 
-    // Get total count
-    const totalCount = await Client.countDocuments(filter);
+    // Get all clients (Firestore doesn't support complex OR queries easily, so filter in memory)
+    let clients = await clientService.find(filters);
+
+    // Apply search filter in memory
+    if (search) {
+      const searchLower = search.toLowerCase();
+      clients = clients.filter(c => 
+        c.companyName?.toLowerCase().includes(searchLower) ||
+        c.email?.toLowerCase().includes(searchLower) ||
+        c.contacts?.some(contact => 
+          contact.name?.toLowerCase().includes(searchLower) ||
+          contact.email?.toLowerCase().includes(searchLower)
+        )
+      );
+    }
+
+    // Sort clients
+    clients.sort((a, b) => {
+      const aVal = (a as any)[sortBy];
+      const bVal = (b as any)[sortBy];
+      if (sortOrder === 'asc') {
+        return aVal > bVal ? 1 : -1;
+      }
+      return aVal < bVal ? 1 : -1;
+    });
+
+    const totalCount = clients.length;
 
     // Calculate pagination
     const pagination = paginateResults(totalCount, {
@@ -137,109 +164,20 @@ export const getClients = asyncHandler(
       order: sortOrder,
     });
 
-    // Calculate skip
+    // Apply pagination
     const skip = (page - 1) * limit;
+    const paginatedClients = clients.slice(skip, skip + limit);
 
-    // Build sort object
-    const sort: any = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
-
-    // Fetch data
-    const clients = await Client.find(filter)
-      .sort(sort)
-      .skip(skip)
-      .limit(limit)
-      .lean(); // Use lean for better performance
-
-    // Calculate statistics for ALL clients in batch (avoid N+1 queries)
-    const Job = mongoose.model('Job');
-    const Candidate = mongoose.model('Candidate');
-    
-    const clientIds = clients.map((c: any) => c._id);
-    
-    // Batch fetch all jobs for all clients in ONE query
-    const allJobs = await Job.find({ 
-      clientId: { $in: clientIds } 
-    }).select('clientId status').lean();
-    
-    // Get all job IDs
-    const allJobIds = allJobs.map((j: any) => j._id);
-    
-    // Batch fetch all candidates for all jobs in ONE query
-    const allCandidates = await Candidate.find({
-      jobIds: { $in: allJobIds }
-    }).select('jobIds status').lean();
-    
-    // Group jobs by clientId for fast lookup
-    const jobsByClient = new Map();
-    allJobs.forEach((job: any) => {
-      const clientId = job.clientId.toString();
-      if (!jobsByClient.has(clientId)) {
-        jobsByClient.set(clientId, []);
-      }
-      jobsByClient.get(clientId).push(job);
-    });
-    
-    // Group candidates by clientId (via their jobs)
-    const candidatesByClient = new Map();
-    allCandidates.forEach((candidate: any) => {
-      const jobIds = candidate.jobIds.map((id: any) => id.toString());
-      allJobs.forEach((job: any) => {
-        if (jobIds.includes(job._id.toString())) {
-          const clientId = job.clientId.toString();
-          if (!candidatesByClient.has(clientId)) {
-            candidatesByClient.set(clientId, []);
-          }
-          candidatesByClient.get(clientId).push(candidate);
-        }
-      });
-    });
-    
-    // Calculate statistics for each client using cached data
-    const clientsWithStats = clients.map((client: any) => {
-      const clientId = (client._id || client.id).toString();
-      const jobs = jobsByClient.get(clientId) || [];
-      const candidates = candidatesByClient.get(clientId) || [];
-      
-      const totalJobs = jobs.length;
-      const activeJobs = jobs.filter((j: any) => j.status === 'open').length;
-      const closedJobs = jobs.filter((j: any) => j.status === 'closed').length;
-      const draftJobs = jobs.filter((j: any) => j.status === 'draft').length;
-      
-      // Deduplicate candidates by ID
-      const uniqueCandidates = Array.from(
-        new Map(candidates.map((c: any) => [c._id.toString(), c])).values()
-      );
-      
-      const totalCandidates = uniqueCandidates.length;
-      const activeCandidates = uniqueCandidates.filter((c: any) =>
-        ['active', 'interviewing', 'offered'].includes(c.status)
-      ).length;
-      const hiredCandidates = uniqueCandidates.filter((c: any) => c.status === 'hired').length;
-      const rejectedCandidates = uniqueCandidates.filter((c: any) =>
-        ['rejected', 'withdrawn'].includes(c.status)
-      ).length;
-      
-      const successRate = totalCandidates > 0
-        ? Math.round((hiredCandidates / totalCandidates) * 100)
-        : 0;
-      
-      return {
-        ...client,
-        id: client._id.toString(), // Transform _id to id for frontend
-        statistics: {
-          totalJobs,
-          activeJobs,
-          closedJobs,
-          draftJobs,
-          totalCandidates,
-          activeCandidates,
-          hiredCandidates,
-          rejectedCandidates,
-          successRate,
-        },
-      };
-    });
+    // Calculate statistics for each client
+    const clientsWithStats = await Promise.all(
+      paginatedClients.map(async (client) => {
+        const stats = await calculateClientStatistics(client.id!);
+        return {
+          ...client,
+          statistics: stats,
+        };
+      })
+    );
 
     successResponse(
       res,
@@ -259,66 +197,27 @@ export const getClientById = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    // Validate ID - prevent "undefined" or invalid ObjectId
-    if (!id || id === 'undefined' || !mongoose.Types.ObjectId.isValid(id)) {
+    // Validate ID
+    if (!id || id === 'undefined') {
       throw new BadRequestError('Invalid client ID');
     }
 
-    const client = await Client.findById(id)
-      .populate('assignedTo', 'firstName lastName email');
+    const client = await clientService.findById(id);
 
     if (!client) {
       throw new NotFoundError('Client not found');
     }
 
-    // Transform the client data to match frontend schema
-    const clientData = client.toJSON();
-
     // Calculate real-time statistics
     const statistics = await calculateClientStatistics(id);
 
-    // Populate assignedToName if assignedTo exists
-    let assignedToId = clientData.assignedTo;
-    let assignedToName = clientData.assignedToName || '';
-
-    if (clientData.assignedTo && typeof clientData.assignedTo === 'object') {
-      const assignedToUser = clientData.assignedTo as any;
-      assignedToName = `${assignedToUser.firstName} ${assignedToUser.lastName}`.trim();
-      assignedToId = assignedToUser.id || assignedToUser._id?.toString();
-    }
-
-    // Build response matching frontend schema exactly
-    const response = {
-      id: clientData.id,
-      companyName: clientData.companyName,
-      email: clientData.email || '',
-      phone: clientData.phone || '',
-      website: clientData.website || '',
-      logo: clientData.logo || '',
-      industry: clientData.industry,
-      companySize: clientData.companySize || '',
-      status: clientData.status,
-      address: clientData.address || {
-        street: '',
-        city: '',
-        state: '',
-        country: '',
-        postalCode: '',
-      },
-      description: clientData.description || '',
-      contacts: clientData.contacts || [],
-      statistics,
-      jobIds: clientData.jobIds || [],
-      tags: clientData.tags || [],
-      assignedTo: assignedToId || '',
-      assignedToName: assignedToName,
-      createdAt: clientData.createdAt,
-      updatedAt: clientData.updatedAt,
-    };
-
+    // Response with client and statistics
     successResponse(
       res,
-      response,
+      {
+        ...client,
+        statistics,
+      },
       'Client retrieved successfully'
     );
   }
@@ -332,7 +231,7 @@ export const updateClient = asyncHandler(
     const { id } = req.params;
     const updates: UpdateClientInput = req.body;
 
-    const client = await Client.findById(id);
+    const client = await clientService.findById(id);
 
     if (!client) {
       throw new NotFoundError('Client not found');
@@ -340,10 +239,10 @@ export const updateClient = asyncHandler(
 
     // Check if companyName is being changed and if it creates a duplicate
     if (updates.companyName && updates.companyName !== client.companyName) {
-      const existingClient = await Client.findOne({
-        companyName: updates.companyName,
-        _id: { $ne: id },
-      });
+      const existingClients = await clientService.find([
+        { field: 'companyName', operator: '==', value: updates.companyName }
+      ]);
+      const existingClient = existingClients.find(c => c.id !== id);
 
       if (existingClient) {
         throw new CustomValidationError(
@@ -352,14 +251,18 @@ export const updateClient = asyncHandler(
       }
     }
 
-    // Update fields
-    Object.assign(client, updates);
-    client.updatedBy = req.user?._id as any;
-    await client.save();
+    // Update client
+    await clientService.update(id, {
+      ...updates,
+      updatedBy: req.user?.id,
+      updatedAt: new Date(),
+    } as any);
 
-    logger.info(`Client updated: ${client.companyName}`);
+    const updatedClient = await clientService.findById(id);
 
-    successResponse(res, client, 'Client updated successfully');
+    logger.info(`Client updated: ${updatedClient?.companyName}`);
+
+    successResponse(res, updatedClient, 'Client updated successfully');
   }
 );
 
@@ -370,23 +273,22 @@ export const deleteClient = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const client = await Client.findById(id);
+    const client = await clientService.findById(id);
 
     if (!client) {
       throw new NotFoundError('Client not found');
     }
 
     // Check if there are associated jobs
-    const Job = require('../models').Job;
-    const jobCount = await Job.countDocuments({ clientId: id });
+    const jobs = await jobService.findByClient(id);
 
-    if (jobCount > 0) {
+    if (jobs.length > 0) {
       throw new CustomValidationError(
-        `Cannot delete client with ${jobCount} active jobs. Please remove or reassign the jobs first.`
+        `Cannot delete client with ${jobs.length} active jobs. Please remove or reassign the jobs first.`
       );
     }
 
-    await client.deleteOne();
+    await clientService.delete(id);
 
     logger.info(`Client deleted: ${client.companyName}`);
 
@@ -399,43 +301,45 @@ export const deleteClient = asyncHandler(
  */
 export const getClientStats = asyncHandler(
   async (_req: Request, res: Response): Promise<void> => {
-    const stats = await Client.aggregate([
-      {
-        $facet: {
-          byStatus: [
-            {
-              $group: {
-                _id: '$isActive',
-                count: { $sum: 1 },
-              },
-            },
-          ],
-          byIndustry: [
-            {
-              $group: {
-                _id: '$industry',
-                count: { $sum: 1 },
-              },
-            },
-            { $sort: { count: -1 } },
-            { $limit: 10 },
-          ],
-          total: [
-            {
-              $count: 'count',
-            },
-          ],
+    // Get all clients
+    const allClients = await clientService.find([]);
+
+    const stats = {
+      byStatus: [
+        {
+          _id: 'active',
+          count: allClients.filter(c => c.status === 'active').length,
         },
-      },
-    ]);
+        {
+          _id: 'inactive',
+          count: allClients.filter(c => c.status === 'inactive').length,
+        },
+        {
+          _id: 'pending',
+          count: allClients.filter(c => c.status === 'pending').length,
+        },
+        {
+          _id: 'on_hold',
+          count: allClients.filter(c => c.status === 'on_hold').length,
+        },
+      ],
+      byIndustry: Array.from(
+        allClients.reduce((map, client) => {
+          const industry = client.industry || 'Unknown';
+          map.set(industry, (map.get(industry) || 0) + 1);
+          return map;
+        }, new Map<string, number>())
+      ).map(([_id, count]) => ({ _id, count })),
+      total: allClients.length,
+    };
 
     const result = {
-      total: stats[0].total[0]?.count || 0,
-      byStatus: stats[0].byStatus.reduce((acc: any, item: any) => {
+      total: stats.total,
+      byStatus: stats.byStatus.reduce((acc: any, item: any) => {
         acc[item._id ? 'active' : 'inactive'] = item.count;
         return acc;
       }, {}),
-      topIndustries: stats[0].byIndustry,
+      topIndustries: stats.byIndustry.slice(0, 10), // Top 10 industries
     };
 
     successResponse(res, result, 'Client statistics retrieved successfully');

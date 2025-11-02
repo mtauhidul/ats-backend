@@ -1,6 +1,11 @@
 import { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import { Application, Candidate, Job, Pipeline } from '../models';
+import { 
+  applicationService, 
+  candidateService, 
+  jobService, 
+  pipelineService,
+  IApplication 
+} from '../services/firestore';
 import openaiService from '../services/openai.service';
 import cloudinaryService from '../services/cloudinary.service';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
@@ -18,16 +23,13 @@ import {
  * Transform application for frontend compatibility
  * Maps backend field names to frontend expected names
  */
-const transformApplication = (app: any) => {
-  const transformed = app.toObject ? app.toObject() : app;
-  
+const transformApplication = (app: IApplication & { id: string }) => {
   return {
-    ...transformed,
-    id: transformed._id,
-    targetJobId: transformed.jobId || null,
-    targetClientId: transformed.clientId || null,
-    submittedAt: transformed.appliedAt || transformed.createdAt,
-    lastUpdated: transformed.updatedAt,
+    ...app,
+    targetJobId: app.jobId || null,
+    targetClientId: app.clientId || null,
+    submittedAt: app.appliedAt || app.createdAt,
+    lastUpdated: app.updatedAt,
   };
 };
 
@@ -56,24 +58,25 @@ export const createApplication = asyncHandler(
 
     let job = null;
 
-    // Verify job exists if jobId is provided (optional at application stage)
+    // Verify job exists if provided
     if (data.jobId) {
-      job = await Job.findById(data.jobId);
+      job = await jobService.findById(data.jobId);
+
       if (!job) {
         throw new NotFoundError('Job not found');
       }
 
       // Set clientId from job if not provided
       if (!data.clientId && job.clientId) {
-        data.clientId = job.clientId.toString();
+        data.clientId = job.clientId;
       }
     }
 
     // Check for duplicate application (including unassigned with jobId: null)
-    const existingApplication = await Application.findOne({
-      jobId: data.jobId || null,
-      email: data.email,
-    });
+    const existingApplications = await applicationService.findByEmail(data.email);
+    const existingApplication = existingApplications.find(app => 
+      (data.jobId && app.jobId === data.jobId) || (!data.jobId && !app.jobId)
+    );
 
     if (existingApplication) {
       if (data.jobId) {
@@ -85,9 +88,7 @@ export const createApplication = asyncHandler(
           `Unassigned application already exists for email: ${data.email}. Please assign a job or delete the existing application first.`
         );
       }
-    }
-
-    // If email_automation source, verify sourceEmailAccountId is provided
+    }    // If email_automation source, verify sourceEmailAccountId is provided
     if (data.source === 'email_automation' && !data.sourceEmailAccountId) {
       throw new CustomValidationError(
         'sourceEmailAccountId is required for email_automation source'
@@ -123,21 +124,19 @@ export const createApplication = asyncHandler(
     }
 
     // Create application
-    const application = await Application.create(data);
+    const applicationId = await applicationService.create(data as any);
+    const application = await applicationService.findById(applicationId);
 
-    // Populate references
-    await application.populate([
-      { path: 'jobId', select: 'title location employmentType' },
-      { path: 'clientId', select: 'companyName logo' },
-      { path: 'sourceEmailAccountId', select: 'name email' },
-    ]);
+    if (!application) {
+      throw new Error('Failed to create application');
+    }
 
     const jobInfo = job ? `for job ${job.title}` : 'without job assignment';
     logger.info(
       `Application created: ${application.email} ${jobInfo} via ${data.source}`
     );
 
-    successResponse(res, transformApplication(application), 'Application created successfully', 201);
+    successResponse(res, transformApplication(application as any), 'Application created successfully', 201);
   }
 );
 
@@ -158,22 +157,33 @@ export const getApplications = asyncHandler(
       sortOrder = 'desc',
     } = req.query as any as ListApplicationsQuery;
 
-    // Build filter
-    const filter: any = {};
-    if (jobId) filter.jobId = jobId;
-    if (clientId) filter.clientId = clientId;
-    if (status) filter.status = status;
-    if (source) filter.source = source;
+    // Fetch all applications (Firestore doesn't support complex queries)
+    let allApplications = await applicationService.find([]);
+
+    // Apply filters in memory
+    if (jobId) {
+      allApplications = allApplications.filter((app: any) => app.jobId === jobId);
+    }
+    if (clientId) {
+      allApplications = allApplications.filter((app: any) => app.clientId === clientId);
+    }
+    if (status) {
+      allApplications = allApplications.filter((app: any) => app.status === status);
+    }
+    if (source) {
+      allApplications = allApplications.filter((app: any) => app.source === source);
+    }
     if (search) {
-      filter.$or = [
-        { firstName: { $regex: search, $options: 'i' } },
-        { lastName: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-      ];
+      const searchLower = search.toLowerCase();
+      allApplications = allApplications.filter((app: any) =>
+        app.firstName?.toLowerCase().includes(searchLower) ||
+        app.lastName?.toLowerCase().includes(searchLower) ||
+        app.email?.toLowerCase().includes(searchLower)
+      );
     }
 
-    // Get total count
-    const totalCount = await Application.countDocuments(filter);
+    // Get total count after filtering
+    const totalCount = allApplications.length;
 
     // Calculate pagination
     const pagination = paginateResults(totalCount, {
@@ -183,24 +193,19 @@ export const getApplications = asyncHandler(
       order: sortOrder,
     });
 
-    // Calculate skip
+    // Sort applications
+    allApplications.sort((a: any, b: any) => {
+      const aValue = a[sortBy];
+      const bValue = b[sortBy];
+      const multiplier = sortOrder === 'asc' ? 1 : -1;
+      if (aValue < bValue) return -1 * multiplier;
+      if (aValue > bValue) return 1 * multiplier;
+      return 0;
+    });
+
+    // Apply pagination
     const skip = (page - 1) * limit;
-
-    // Build sort object
-    const sort: any = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
-
-    // Fetch data
-    const applications = await Application.find(filter)
-      .populate('jobId', 'title location employmentType')
-      .populate('clientId', 'companyName logo')
-      .populate('sourceEmailAccountId', 'name email')
-      .populate('teamMembers', 'firstName lastName email')
-      .populate('reviewedBy', 'firstName lastName email')
-      .sort(sort)
-      .skip(skip)
-      .limit(limit)
-      .lean(); // Use lean for better performance
+    const applications = allApplications.slice(skip, skip + limit);
 
     successResponse(
       res,
@@ -220,19 +225,13 @@ export const getApplicationById = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const application = await Application.findById(id)
-      .populate('jobId', 'title description location employmentType salaryRange')
-      .populate('clientId', 'companyName logo website industry')
-      .populate('sourceEmailAccountId', 'name email')
-      .populate('candidateId', 'firstName lastName email status currentStage aiScore')
-      .populate('teamMembers', 'firstName lastName email')
-      .populate('reviewedBy', 'firstName lastName email');
+    const application = await applicationService.findById(id);
 
     if (!application) {
       throw new NotFoundError('Application not found');
     }
 
-    successResponse(res, transformApplication(application), 'Application retrieved successfully');
+    successResponse(res, transformApplication(application as any), 'Application retrieved successfully');
   }
 );
 
@@ -244,7 +243,7 @@ export const updateApplication = asyncHandler(
     const { id } = req.params;
     const updates: UpdateApplicationInput = req.body;
 
-    const application = await Application.findById(id);
+    const application = await applicationService.findById(id);
 
     if (!application) {
       throw new NotFoundError('Application not found');
@@ -252,11 +251,12 @@ export const updateApplication = asyncHandler(
 
     // Check if email is being changed and if it creates a duplicate
     if (updates.email && updates.email !== application.email) {
-      const existingApplication = await Application.findOne({
-        jobId: application.jobId,
-        email: updates.email,
-        _id: { $ne: id },
-      });
+      const allApplications = await applicationService.find([]);
+      const existingApplication = allApplications.find(app => 
+        app.jobId === application.jobId && 
+        app.email === updates.email && 
+        app.id !== id
+      );
 
       if (existingApplication) {
         throw new CustomValidationError(
@@ -265,28 +265,24 @@ export const updateApplication = asyncHandler(
       }
     }
 
-    // Update fields
-    Object.assign(application, updates);
+    // Build update data
+    const updateData: any = { ...updates };
     
     // If status is being changed to approved or rejected, set reviewedBy to current user
     if (updates.status && ['approved', 'rejected'].includes(updates.status.toLowerCase())) {
       if ((req as any).user && (req as any).user.id) {
-        application.reviewedBy = (req as any).user.id;
+        updateData.reviewedBy = (req as any).user.id;
       }
     }
     
-    await application.save();
+    await applicationService.update(id, updateData);
 
-    // Populate references
-    await application.populate([
-      { path: 'jobId', select: 'title location employmentType' },
-      { path: 'clientId', select: 'name logo' },
-      { path: 'reviewedBy', select: 'firstName lastName email' },
-    ]);
+    // Fetch updated application
+    const updatedApplication = await applicationService.findById(id);
 
     logger.info(`Application updated: ${application.email}`);
 
-    successResponse(res, transformApplication(application), 'Application updated successfully');
+    successResponse(res, transformApplication(updatedApplication as any), 'Application updated successfully');
   }
 );
 
@@ -297,14 +293,17 @@ export const deleteApplication = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const application = await Application.findById(id);
+    const application = await applicationService.findById(id);
 
     if (!application) {
       throw new NotFoundError('Application not found');
     }
 
     // Check if application has been approved (converted to candidate)
-    const existingCandidate = await Candidate.findOne({ applicationId: id });
+    const allCandidates = await candidateService.find([]);
+    const existingCandidate = allCandidates.find((c: any) => 
+      c.applicationIds?.includes(id)
+    );
     if (existingCandidate) {
       throw new CustomValidationError(
         'Cannot delete application that has been approved as candidate'
@@ -333,8 +332,8 @@ export const deleteApplication = asyncHandler(
     }
 
     // Delete additional documents from Cloudinary if exists
-    if (application.additionalDocuments && application.additionalDocuments.length > 0) {
-      for (const doc of application.additionalDocuments) {
+    if ((application as any).additionalDocuments && (application as any).additionalDocuments.length > 0) {
+      for (const doc of (application as any).additionalDocuments) {
         if (doc.url) {
           try {
             const urlParts = doc.url.split('/');
@@ -355,7 +354,7 @@ export const deleteApplication = asyncHandler(
     }
 
     // Delete application from database
-    await application.deleteOne();
+    await applicationService.delete(id);
 
     logger.info(`Application deleted: ${application.email}`);
 
@@ -371,20 +370,23 @@ export const approveApplication = asyncHandler(
     const { id } = req.params;
     const { jobId, assignToPipeline, notes }: ApproveApplicationInput = req.body;
 
-    const application = await Application.findById(id);
+    const application = await applicationService.findById(id);
 
     if (!application) {
       throw new NotFoundError('Application not found');
     }
 
     // Check if already approved (check if candidate exists)
-    const existingCandidate = await Candidate.findOne({ applicationId: id });
+    const allCandidates = await candidateService.find([]);
+    const existingCandidate = allCandidates.find((c: any) => 
+      c.applicationIds?.includes(id)
+    );
     if (existingCandidate) {
       throw new CustomValidationError('Application has already been approved');
     }
 
     // Verify job exists
-    const job = await Job.findById(jobId);
+    const job = await jobService.findById(jobId);
     if (!job) {
       throw new NotFoundError('Job not found for scoring');
     }
@@ -395,13 +397,13 @@ export const approveApplication = asyncHandler(
     let pipeline: any = null;
 
     if (assignToPipeline) {
-      pipeline = await Pipeline.findById(assignToPipeline);
+      pipeline = await pipelineService.findById(assignToPipeline);
       if (!pipeline) {
         throw new NotFoundError('Pipeline not found');
       }
-      logger.info(`Using provided pipeline: ${pipeline.name} (ID: ${pipeline._id})`);
+      logger.info(`Using provided pipeline: ${pipeline.name} (ID: ${pipeline.id})`);
     } else if (job.pipelineId) {
-      pipeline = await Pipeline.findById(job.pipelineId);
+      pipeline = await pipelineService.findById(job.pipelineId);
       logger.info(`Job has pipeline: ${pipeline ? pipeline.name : 'NOT FOUND'} (ID: ${job.pipelineId})`);
     } else {
       logger.info(`Job has NO pipeline assigned (job.pipelineId is null/undefined)`);
@@ -410,13 +412,13 @@ export const approveApplication = asyncHandler(
     // Debug: Log pipeline details
     if (pipeline) {
       console.log('=== PIPELINE DEBUG ===');
-      console.log('Pipeline ID:', pipeline._id);
+      console.log('Pipeline ID:', pipeline.id);
       console.log('Pipeline Name:', pipeline.name);
       console.log('Has stages:', !!pipeline.stages);
       console.log('Stages count:', pipeline.stages?.length || 0);
       if (pipeline.stages && pipeline.stages.length > 0) {
         console.log('First stage:', JSON.stringify({
-          id: pipeline.stages[0]._id,
+          id: pipeline.stages[0].id,
           name: pipeline.stages[0].name,
           order: pipeline.stages[0].order
         }));
@@ -429,12 +431,12 @@ export const approveApplication = asyncHandler(
     
     // Prepare parsed data for scoring
     const parsedDataForScoring: any = {
-      summary: application.parsedData?.summary,
-      skills: application.parsedData?.skills,
-      experience: application.parsedData?.experience,
-      education: application.parsedData?.education,
-      certifications: application.parsedData?.certifications,
-      languages: application.parsedData?.languages,
+      summary: (application as any).parsedData?.summary,
+      skills: (application as any).parsedData?.skills,
+      experience: (application as any).parsedData?.experience,
+      education: (application as any).parsedData?.education,
+      certifications: (application as any).parsedData?.certifications,
+      languages: (application as any).parsedData?.languages,
       extractedText: '',
     };
 
@@ -446,12 +448,12 @@ export const approveApplication = asyncHandler(
 
     // Debug: Log parsedData before creating candidate
     console.log('Creating candidate from application:', {
-      applicationId: application._id,
-      hasParsedData: !!application.parsedData,
-      parsedDataKeys: application.parsedData ? Object.keys(application.parsedData) : [],
-      skillsCount: application.parsedData?.skills?.length || 0,
-      experienceCount: application.parsedData?.experience?.length || 0,
-      educationCount: application.parsedData?.education?.length || 0,
+      applicationId: application.id,
+      hasParsedData: !!(application as any).parsedData,
+      parsedDataKeys: (application as any).parsedData ? Object.keys((application as any).parsedData) : [],
+      skillsCount: (application as any).parsedData?.skills?.length || 0,
+      experienceCount: (application as any).parsedData?.experience?.length || 0,
+      educationCount: (application as any).parsedData?.education?.length || 0,
       skillsSample: application.parsedData?.skills?.[0],
       experienceSample: JSON.stringify(application.parsedData?.experience?.[0]),
       educationSample: JSON.stringify(application.parsedData?.education?.[0]),
@@ -531,7 +533,7 @@ export const approveApplication = asyncHandler(
 
     // Prepare candidate data
     const candidateData: any = {
-      applicationId: application._id,
+      applicationIds: [application.id],
       jobIds: [jobId],
       firstName: application.firstName,
       lastName: application.lastName,
@@ -542,12 +544,12 @@ export const approveApplication = asyncHandler(
       currentPipelineStageId: firstStageId, // Assign to first stage, not pipeline ID
       status: 'active',
       aiScore,
-      notes: notes || application.notes,
+      notes: notes || (application as any).notes,
       source: 'application',
       createdBy: (req as any).user.id,
       jobApplications: [{
         jobId: jobId,
-        applicationId: application._id,
+        applicationId: application.id,
         status: 'active',
         appliedAt: application.createdAt || new Date(),
         lastStatusChange: new Date(),
@@ -559,16 +561,16 @@ export const approveApplication = asyncHandler(
     };
 
     // Copy parsed resume data from application if it exists
-    if (application.parsedData) {
-      if (application.parsedData.summary) {
-        candidateData.summary = application.parsedData.summary;
+    if ((application as any).parsedData) {
+      if ((application as any).parsedData.summary) {
+        candidateData.summary = (application as any).parsedData.summary;
       }
-      if (application.parsedData.skills && application.parsedData.skills.length > 0) {
-        candidateData.skills = [...application.parsedData.skills];
+      if ((application as any).parsedData.skills && (application as any).parsedData.skills.length > 0) {
+        candidateData.skills = [...(application as any).parsedData.skills];
       }
-      if (application.parsedData.experience && application.parsedData.experience.length > 0) {
+      if ((application as any).parsedData.experience && (application as any).parsedData.experience.length > 0) {
         // Map experience data and fix empty company names
-        candidateData.experience = application.parsedData.experience.map((exp: any) => {
+        candidateData.experience = (application as any).parsedData.experience.map((exp: any) => {
           let company = exp.company || '';
           
           // If company is empty, try to extract from description or title
@@ -593,8 +595,8 @@ export const approveApplication = asyncHandler(
           candidateData.yearsOfExperience = calculatedYears;
         }
       }
-      if (application.parsedData.education && application.parsedData.education.length > 0) {
-        candidateData.education = application.parsedData.education.map((edu: any) => {
+      if ((application as any).parsedData.education && (application as any).parsedData.education.length > 0) {
+        candidateData.education = (application as any).parsedData.education.map((edu: any) => {
           // Ensure field contains actual field of study, not degree type
           let field = edu.field || '';
           
@@ -621,45 +623,40 @@ export const approveApplication = asyncHandler(
           };
         });
       }
-      if (application.parsedData.certifications && application.parsedData.certifications.length > 0) {
+      if ((application as any).parsedData.certifications && (application as any).parsedData.certifications.length > 0) {
         // Filter out skill descriptions from certifications
-        candidateData.certifications = filterCertifications(application.parsedData.certifications);
+        candidateData.certifications = filterCertifications((application as any).parsedData.certifications);
       }
-      if (application.parsedData.languages && application.parsedData.languages.length > 0) {
-        candidateData.languages = [...application.parsedData.languages];
+      if ((application as any).parsedData.languages && (application as any).parsedData.languages.length > 0) {
+        candidateData.languages = [...(application as any).parsedData.languages];
       }
     }
 
     // Create candidate
-    const candidate = await Candidate.create(candidateData);
+    const candidateId = await candidateService.create(candidateData);
+    const candidate = await candidateService.findById(candidateId);
     
+    if (!candidate) {
+      throw new Error('Failed to create candidate');
+    }
+
     console.log('=== CANDIDATE CREATED ===');
-    console.log('Candidate ID:', candidate._id);
+    console.log('Candidate ID:', candidate.id);
     console.log('Candidate Name:', `${candidate.firstName} ${candidate.lastName}`);
     console.log('Job IDs:', candidate.jobIds);
-    console.log('Current Pipeline Stage ID:', candidate.currentPipelineStageId);
+    console.log('Current Pipeline Stage ID:', (candidate as any).currentPipelineStageId);
     console.log('Status:', candidate.status);
-    console.log('Skills Count:', candidate.skills?.length || 0);
-    console.log('Experience Count:', candidate.experience?.length || 0);
-    console.log('Education Count:', candidate.education?.length || 0);
+    console.log('Skills Count:', (candidate as any).skills?.length || 0);
+    console.log('Experience Count:', (candidate as any).experience?.length || 0);
+    console.log('Education Count:', (candidate as any).education?.length || 0);
     console.log('========================');
 
     // Update application status
-    application.status = 'approved';
-    application.approvedAt = new Date();
-    
-    // Set reviewedBy to current user
-    if ((req as any).user && (req as any).user.id) {
-      application.reviewedBy = (req as any).user.id;
-    }
-    
-    await application.save();
-
-    // Populate candidate data (skip pipeline stage to avoid schema issues)
-    await candidate.populate([
-      { path: 'jobIds', select: 'title location employmentType' },
-      { path: 'applicationId', select: 'firstName lastName email' },
-    ]);
+    await applicationService.update(id, {
+      status: 'approved',
+      approvedAt: new Date(),
+      reviewedBy: (req as any).user?.id,
+    } as any);
 
     logger.info(
       `Candidate created from application: ${candidate.email} with AI score: ${aiScore.overallScore}`
@@ -684,39 +681,48 @@ export const bulkUpdateStatus = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { applicationIds, status, notes }: BulkUpdateStatusInput = req.body;
 
-    // Validate all IDs
-    const validIds = applicationIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+    // Validate all IDs (simple string validation for Firestore)
+    const validIds = applicationIds.filter(id => typeof id === 'string' && id.length > 0);
     if (validIds.length !== applicationIds.length) {
       throw new CustomValidationError('Some application IDs are invalid');
     }
 
-    // Update applications
-    const updateData: any = { status };
-    if (notes) {
-      updateData.$push = { notes };
-    }
-    
-    // If status is approved or rejected, set reviewedBy to current user
-    if (status && ['approved', 'rejected'].includes(status.toLowerCase())) {
-      if ((req as any).user && (req as any).user.id) {
-        updateData.reviewedBy = (req as any).user.id;
+    // Update each application individually
+    let modifiedCount = 0;
+    for (const appId of validIds) {
+      try {
+        const updateData: any = { status };
+        if (notes) {
+          const app = await applicationService.findById(appId);
+          if (app) {
+            const existingNotes = (app as any).notes || '';
+            updateData.notes = existingNotes ? `${existingNotes}\n${notes}` : notes;
+          }
+        }
+        
+        // If status is approved or rejected, set reviewedBy to current user
+        if (status && ['approved', 'rejected'].includes(status.toLowerCase())) {
+          if ((req as any).user && (req as any).user.id) {
+            updateData.reviewedBy = (req as any).user.id;
+          }
+        }
+
+        await applicationService.update(appId, updateData);
+        modifiedCount++;
+      } catch (error) {
+        logger.error(`Failed to update application ${appId}:`, error);
       }
     }
 
-    const result = await Application.updateMany(
-      { _id: { $in: validIds } },
-      updateData
-    );
-
-    logger.info(`Bulk updated ${result.modifiedCount} applications to status: ${status}`);
+    logger.info(`Bulk updated ${modifiedCount} applications to status: ${status}`);
 
     successResponse(
       res,
       {
-        modifiedCount: result.modifiedCount,
+        modifiedCount,
         status,
       },
-      `Successfully updated ${result.modifiedCount} applications`
+      `Successfully updated ${modifiedCount} applications`
     );
   }
 );
@@ -728,23 +734,25 @@ export const bulkDeleteApplications = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { applicationIds }: { applicationIds: string[] } = req.body;
 
-    // Validate all IDs
-    const validIds = applicationIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+    // Validate all IDs (simple string validation for Firestore)
+    const validIds = applicationIds.filter(id => typeof id === 'string' && id.length > 0);
     if (validIds.length !== applicationIds.length) {
       throw new CustomValidationError('Some application IDs are invalid');
     }
 
     // Get all applications to delete
-    const applications = await Application.find({ _id: { $in: validIds } });
+    const allApplications = await applicationService.find([]);
+    const applications = allApplications.filter(app => validIds.includes(app.id));
 
     if (applications.length === 0) {
       throw new NotFoundError('No applications found with provided IDs');
     }
 
     // Check if any application has been approved (converted to candidate)
-    const candidateCheck = await Candidate.findOne({ 
-      applicationId: { $in: validIds } 
-    });
+    const allCandidates = await candidateService.find([]);
+    const candidateCheck = allCandidates.find((c: any) => 
+      c.applicationIds?.some((appId: string) => validIds.includes(appId))
+    );
     
     if (candidateCheck) {
       throw new CustomValidationError(
@@ -769,13 +777,13 @@ export const bulkDeleteApplications = asyncHandler(
             deletedFilesCount++;
           }
         } catch (error) {
-          logger.error(`Error deleting resume from Cloudinary for application ${application._id}:`, error);
+          logger.error(`Error deleting resume from Cloudinary for application ${application.id}:`, error);
         }
       }
 
       // Delete additional documents from Cloudinary if exists
-      if (application.additionalDocuments && application.additionalDocuments.length > 0) {
-        for (const doc of application.additionalDocuments) {
+      if ((application as any).additionalDocuments && (application as any).additionalDocuments.length > 0) {
+        for (const doc of (application as any).additionalDocuments) {
           if (doc.url) {
             try {
               const urlParts = doc.url.split('/');
@@ -796,17 +804,25 @@ export const bulkDeleteApplications = asyncHandler(
     }
 
     // Delete all applications from database
-    const result = await Application.deleteMany({ _id: { $in: validIds } });
+    let deletedCount = 0;
+    for (const appId of validIds) {
+      try {
+        await applicationService.delete(appId);
+        deletedCount++;
+      } catch (error) {
+        logger.error(`Failed to delete application ${appId}:`, error);
+      }
+    }
 
-    logger.info(`Bulk deleted ${result.deletedCount} applications and ${deletedFilesCount} files from Cloudinary`);
+    logger.info(`Bulk deleted ${deletedCount} applications and ${deletedFilesCount} files from Cloudinary`);
 
     successResponse(
       res,
       {
-        deletedCount: result.deletedCount,
+        deletedCount,
         deletedFilesCount,
       },
-      `Successfully deleted ${result.deletedCount} applications`
+      `Successfully deleted ${deletedCount} applications`
     );
   }
 );
@@ -818,48 +834,30 @@ export const getApplicationStats = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { jobId } = req.query;
 
-    const filter: any = {};
-    if (jobId) filter.jobId = jobId;
+    // Fetch all applications
+    let allApplications = await applicationService.find([]);
 
-    const stats = await Application.aggregate([
-      { $match: filter },
-      {
-        $facet: {
-          byStatus: [
-            {
-              $group: {
-                _id: '$status',
-                count: { $sum: 1 },
-              },
-            },
-          ],
-          bySource: [
-            {
-              $group: {
-                _id: '$source',
-                count: { $sum: 1 },
-              },
-            },
-          ],
-          total: [
-            {
-              $count: 'count',
-            },
-          ],
-        },
-      },
-    ]);
+    // Filter by jobId if specified
+    if (jobId) {
+      allApplications = allApplications.filter((app: any) => app.jobId === jobId);
+    }
+
+    // Calculate statistics in memory
+    const byStatus: any = {};
+    const bySource: any = {};
+
+    allApplications.forEach((app: any) => {
+      // Count by status
+      byStatus[app.status] = (byStatus[app.status] || 0) + 1;
+
+      // Count by source
+      bySource[app.source] = (bySource[app.source] || 0) + 1;
+    });
 
     const result = {
-      total: stats[0].total[0]?.count || 0,
-      byStatus: stats[0].byStatus.reduce((acc: any, item: any) => {
-        acc[item._id] = item.count;
-        return acc;
-      }, {}),
-      bySource: stats[0].bySource.reduce((acc: any, item: any) => {
-        acc[item._id] = item.count;
-        return acc;
-      }, {}),
+      total: allApplications.length,
+      byStatus,
+      bySource,
     };
 
     successResponse(res, result, 'Application statistics retrieved successfully');
@@ -880,96 +878,47 @@ export const getDashboardAnalytics = asyncHandler(
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - daysNum);
 
-    // Optimized aggregation - count by source type in the aggregation pipeline
-    const analytics = await Application.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startDate, $lte: endDate },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            date: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-            source: "$source",
-          },
-          count: { $sum: 1 },
-        },
-      },
-      {
-        $group: {
-          _id: "$_id.date",
-          applications: { $sum: "$count" },
-          sourceBreakdown: {
-            $push: {
-              source: "$_id.source",
-              count: "$count",
-            },
-          },
-        },
-      },
-      {
-        $sort: { _id: 1 },
-      },
-      {
-        $project: {
-          date: "$_id",
-          applications: 1,
-          directSubmissions: {
-            $sum: {
-              $map: {
-                input: {
-                  $filter: {
-                    input: "$sourceBreakdown",
-                    as: "item",
-                    cond: {
-                      $eq: ["$$item.source", "direct_apply"],
-                    },
-                  },
-                },
-                as: "filtered",
-                in: "$$filtered.count",
-              },
-            },
-          },
-          manualImports: {
-            $sum: {
-              $map: {
-                input: {
-                  $filter: {
-                    input: "$sourceBreakdown",
-                    as: "item",
-                    cond: {
-                      $eq: ["$$item.source", "manual"],
-                    },
-                  },
-                },
-                as: "filtered",
-                in: "$$filtered.count",
-              },
-            },
-          },
-          emailApplications: {
-            $sum: {
-              $map: {
-                input: {
-                  $filter: {
-                    input: "$sourceBreakdown",
-                    as: "item",
-                    cond: {
-                      $eq: ["$$item.source", "email_automation"],
-                    },
-                  },
-                },
-                as: "filtered",
-                in: "$$filtered.count",
-              },
-            },
-          },
-          _id: 0,
-        },
-      },
-    ]);
+    // Fetch all applications within date range
+    const allApplications = await applicationService.find([]);
+    const filteredApplications = allApplications.filter((app: any) => {
+      const createdAt = app.createdAt instanceof Date ? app.createdAt : new Date(app.createdAt);
+      return createdAt >= startDate && createdAt <= endDate;
+    });
+
+    // Group by date and source
+    const groupedData: Map<string, any> = new Map();
+
+    filteredApplications.forEach((app: any) => {
+      const createdAt = app.createdAt instanceof Date ? app.createdAt : new Date(app.createdAt);
+      const dateStr = createdAt.toISOString().split('T')[0]; // YYYY-MM-DD format
+      const source = app.source || 'unknown';
+
+      if (!groupedData.has(dateStr)) {
+        groupedData.set(dateStr, {
+          date: dateStr,
+          applications: 0,
+          directSubmissions: 0,
+          manualImports: 0,
+          emailApplications: 0,
+        });
+      }
+
+      const dateData = groupedData.get(dateStr);
+      dateData.applications++;
+
+      if (source === 'direct_submission') {
+        dateData.directSubmissions++;
+      } else if (source === 'manual_import') {
+        dateData.manualImports++;
+      } else if (source === 'email' || source === 'email_automation') {
+        dateData.emailApplications++;
+      }
+    });
+
+    // Convert map to array and sort by date
+    const analytics = Array.from(groupedData.values()).sort((a, b) => 
+      a.date.localeCompare(b.date)
+    );
 
     successResponse(
       res,

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { asyncHandler, successResponse } from '../utils/helpers';
 import { BadRequestError } from '../utils/errors';
-import { Email, Candidate, Message } from '../models';
+import { emailService, candidateService, messageService } from '../services/firestore';
 import logger from '../utils/logger';
 
 const RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET || '';
@@ -68,13 +68,14 @@ const handleEmailSent = async (data: any) => {
   const emailId = data.email_id;
   
   if (emailId) {
-    await Email.findOneAndUpdate(
-      { resendId: emailId },
-      { 
+    const allEmails = await emailService.find([]);
+    const email = allEmails.find((e: any) => e.resendId === emailId);
+    if (email) {
+      await emailService.update(email.id, { 
         status: 'sent',
         sentAt: new Date(),
-      }
-    );
+      } as any);
+    }
   }
 };
 
@@ -85,13 +86,14 @@ const handleEmailDelivered = async (data: any) => {
   const emailId = data.email_id;
   
   if (emailId) {
-    await Email.findOneAndUpdate(
-      { resendId: emailId },
-      { 
+    const allEmails = await emailService.find([]);
+    const email = allEmails.find((e: any) => e.resendId === emailId);
+    if (email) {
+      await emailService.update(email.id, { 
         status: 'delivered',
         deliveredAt: new Date(),
-      }
-    );
+      } as any);
+    }
   }
 };
 
@@ -102,12 +104,13 @@ const handleEmailDelayed = async (data: any) => {
   const emailId = data.email_id;
   
   if (emailId) {
-    await Email.findOneAndUpdate(
-      { resendId: emailId },
-      { 
+    const allEmails = await emailService.find([]);
+    const email = allEmails.find((e: any) => e.resendId === emailId);
+    if (email) {
+      await emailService.update(email.id, { 
         status: 'delayed',
-      }
-    );
+      } as any);
+    }
   }
 };
 
@@ -118,13 +121,14 @@ const handleEmailComplained = async (data: any) => {
   const emailId = data.email_id;
   
   if (emailId) {
-    await Email.findOneAndUpdate(
-      { resendId: emailId },
-      { 
+    const allEmails = await emailService.find([]);
+    const email = allEmails.find((e: any) => e.resendId === emailId);
+    if (email) {
+      await emailService.update(email.id, { 
         status: 'complained',
-      }
-    );
-    logger.warn(`Email marked as spam: ${emailId}`);
+      } as any);
+      logger.warn(`Email marked as spam: ${emailId}`);
+    }
   }
 };
 
@@ -135,14 +139,15 @@ const handleEmailBounced = async (data: any) => {
   const emailId = data.email_id;
   
   if (emailId) {
-    await Email.findOneAndUpdate(
-      { resendId: emailId },
-      { 
+    const allEmails = await emailService.find([]);
+    const email = allEmails.find((e: any) => e.resendId === emailId);
+    if (email) {
+      await emailService.update(email.id, { 
         status: 'bounced',
         bouncedAt: new Date(),
-      }
-    );
-    logger.warn(`Email bounced: ${emailId}`);
+      } as any);
+      logger.warn(`Email bounced: ${emailId}`);
+    }
   }
 };
 
@@ -153,13 +158,14 @@ const handleEmailOpened = async (data: any) => {
   const emailId = data.email_id;
   
   if (emailId) {
-    await Email.findOneAndUpdate(
-      { resendId: emailId },
-      { 
+    const allEmails = await emailService.find([]);
+    const email = allEmails.find((e: any) => e.resendId === emailId);
+    if (email) {
+      await emailService.update(email.id, { 
         openedAt: new Date(),
-        $inc: { openCount: 1 },
-      }
-    );
+        openCount: (email.openCount || 0) + 1,
+      } as any);
+    }
   }
 };
 
@@ -170,13 +176,14 @@ const handleEmailClicked = async (data: any) => {
   const emailId = data.email_id;
   
   if (emailId) {
-    await Email.findOneAndUpdate(
-      { resendId: emailId },
-      { 
+    const allEmails = await emailService.find([]);
+    const email = allEmails.find((e: any) => e.resendId === emailId);
+    if (email) {
+      await emailService.update(email.id, { 
         clickedAt: new Date(),
-        $inc: { clickCount: 1 },
-      }
-    );
+        clickCount: (email.clickCount || 0) + 1,
+      } as any);
+    }
   }
 };
 
@@ -223,9 +230,10 @@ const handleEmailReceived = async (data: any) => {
     });
 
     // Try to find the candidate by email
-    const candidate = await Candidate.findOne({
-      email: { $regex: new RegExp(fromEmail, 'i') }
-    });
+    const allCandidates = await candidateService.find([]);
+    const candidate = allCandidates.find((c: any) => 
+      c.email?.toLowerCase() === fromEmail.toLowerCase()
+    );
 
     // Determine thread ID based on inReplyTo or messageId
     let threadId = inReplyTo || messageId;
@@ -233,7 +241,8 @@ const handleEmailReceived = async (data: any) => {
     // Try to find the original email this is replying to
     let originalEmail = null;
     if (inReplyTo) {
-      originalEmail = await Email.findOne({ messageId: inReplyTo });
+      const allEmails = await emailService.find([]);
+      originalEmail = allEmails.find((e: any) => e.messageId === inReplyTo);
       if (originalEmail && originalEmail.threadId) {
         threadId = originalEmail.threadId;
       }
@@ -241,7 +250,7 @@ const handleEmailReceived = async (data: any) => {
 
     if (candidate) {
       // Create an Email record for the inbound email
-      const inboundEmail = await Email.create({
+      const inboundEmailId = await emailService.create({
         direction: 'inbound',
         from: fromEmail,
         to: Array.isArray(toEmail) ? toEmail : [toEmail],
@@ -251,7 +260,7 @@ const handleEmailReceived = async (data: any) => {
         status: 'received',
         receivedAt: new Date(),
         resendId: emailId,
-        candidateId: candidate._id,
+        candidateId: candidate.id,
         applicationId: originalEmail?.applicationId,
         jobId: originalEmail?.jobId,
         interviewId: originalEmail?.interviewId,
@@ -259,11 +268,11 @@ const handleEmailReceived = async (data: any) => {
         inReplyTo,
         threadId,
         attachments: processedAttachments,
-      });
+      } as any);
 
       // Also create a message record for easy tracking
-      await Message.create({
-        candidateId: candidate._id,
+      await messageService.create({
+        candidateId: candidate.id,
         subject,
         body: textBody || htmlBody,
         from: fromEmail,
@@ -272,11 +281,11 @@ const handleEmailReceived = async (data: any) => {
         status: 'received',
         receivedAt: new Date(),
         emailId: emailId,
-      });
+      } as any);
 
       logger.info(`Created inbound email and message for candidate ${candidate.email}`, {
-        emailId: inboundEmail._id,
-        candidateId: candidate._id,
+        emailId: inboundEmailId,
+        candidateId: candidate.id,
         threadId,
       });
 
@@ -287,7 +296,7 @@ const handleEmailReceived = async (data: any) => {
       logger.warn(`Received email from unknown sender: ${fromEmail}`);
 
       // Store as unmatched email for manual review
-      await Email.create({
+      await emailService.create({
         direction: 'inbound',
         from: fromEmail,
         to: Array.isArray(toEmail) ? toEmail : [toEmail],
@@ -301,10 +310,10 @@ const handleEmailReceived = async (data: any) => {
         inReplyTo,
         threadId,
         attachments: processedAttachments,
-      });
+      } as any);
 
       // Store as unmatched message for manual review
-      await Message.create({
+      await messageService.create({
         subject,
         body: textBody || htmlBody,
         from: fromEmail,
@@ -313,7 +322,7 @@ const handleEmailReceived = async (data: any) => {
         status: 'unmatched',
         receivedAt: new Date(),
         emailId: emailId,
-      });
+      } as any);
 
       logger.info('Stored unmatched inbound email for manual review');
     }

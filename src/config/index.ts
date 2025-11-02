@@ -8,10 +8,8 @@ export const config = {
   port: parseInt(process.env.PORT || "5000", 10),
   apiVersion: process.env.API_VERSION || "v1",
 
-  // Database
-  mongodb: {
-    uri: process.env.MONGODB_URI || "mongodb://localhost:27017/ats",
-  },
+  // Database - Firestore (MongoDB removed)
+  // No database URI needed - Firebase Admin SDK uses service account
 
   // Clerk Authentication
   clerk: {
@@ -99,17 +97,43 @@ export const config = {
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE || "10485760", 10),
     allowedTypes: (process.env.ALLOWED_FILE_TYPES || "pdf,doc,docx").split(","),
   },
+
+  // Firebase / Firestore
+  firebase: {
+    projectId: process.env.FIREBASE_PROJECT_ID || "",
+    serviceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "",
+    serviceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "",
+  },
+
+  // Migration settings - DEPRECATED: We removed MongoDB completely
+  // Keeping this temporarily for backward compatibility, but not used
+  migration: {
+    dualWriteEnabled: false, // Always false - MongoDB removed
+    useFirestoreReads: true, // Always true - only Firestore now
+    defaultCompanyId: process.env.DEFAULT_COMPANY_ID || "default-company",
+  },
 };
 
 // Validation
 export function validateConfig() {
-  const required = ["MONGODB_URI", "OPENAI_API_KEY", "RESEND_API_KEY"];
+  const required = [
+    "FIREBASE_PROJECT_ID",
+    "OPENAI_API_KEY",
+    "RESEND_API_KEY"
+  ];
 
   const missing = required.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {
     throw new Error(
       `Missing required environment variables: ${missing.join(", ")}`
+    );
+  }
+
+  // Validate Firebase service account path or JSON
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT_PATH && !process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    throw new Error(
+      "Missing required Firebase configuration: Either FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_SERVICE_ACCOUNT_JSON must be provided"
     );
   }
 }

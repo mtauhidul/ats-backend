@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { config } from "../config";
-import { Application, Job } from "../models";
+import { applicationService, jobService } from "../services/firestore";
 import affindaService from "../services/affinda.service";
 import cloudinaryService from "../services/cloudinary.service";
 import openaiService from "../services/openai.service";
@@ -115,7 +115,7 @@ export const parseAndSaveResume = asyncHandler(
     }
 
     // Verify job exists
-    const job = await Job.findById(data.jobId);
+    const job = await jobService.findById(data.jobId);
     if (!job) {
       throw new NotFoundError("Job not found");
     }
@@ -160,10 +160,10 @@ export const parseAndSaveResume = asyncHandler(
     }
 
     // Check if application already exists for this job and email (including unassigned)
-    const existingApplication = await Application.findOne({
-      jobId: data.jobId || null,
-      email: parsedData.personalInfo.email,
-    });
+    const allApplications = await applicationService.find([]);
+    const existingApplication = allApplications.find((app: any) =>
+      (app.jobId === data.jobId || !app.jobId) && app.email === parsedData.personalInfo?.email
+    );
 
     if (existingApplication) {
       if (data.jobId) {
@@ -184,7 +184,7 @@ export const parseAndSaveResume = asyncHandler(
     );
 
     // Create application
-    const application = await Application.create({
+    const applicationId = await applicationService.create({
       jobId: data.jobId,
       clientId: data.clientId || job.clientId,
       source: data.source,
@@ -204,13 +204,13 @@ export const parseAndSaveResume = asyncHandler(
       },
       status: "pending",
       notes: data.notes,
-    });
+    } as any);
 
-    // Populate job and client data
-    await application.populate([
-      { path: "jobId", select: "title location employmentType" },
-      { path: "clientId", select: "name logo" },
-    ]);
+    const application = await applicationService.findById(applicationId);
+
+    if (!application) {
+      throw new NotFoundError("Application not found after creation");
+    }
 
     logger.info(
       `Application created successfully: ${application.email} for job ${job.title}`
@@ -233,7 +233,7 @@ export const reparseApplicationResume = asyncHandler(
   async (req: Request, _res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const application = await Application.findById(id);
+    const application = await applicationService.findById(id);
 
     if (!application) {
       throw new NotFoundError("Application not found");

@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { systemSettingsService } from "../services/firestore";
+import { SystemSettings } from "../models/SystemSettings";
 
 /**
  * Get IMAP settings (without password)
@@ -9,7 +9,7 @@ export const getSmtpSettings = async (
   res: Response
 ): Promise<void> => {
   try {
-    const settings = await systemSettingsService.getSettings();
+    const settings = await SystemSettings.getSettings();
 
     const smtpSettings = settings.smtp
       ? {
@@ -58,7 +58,7 @@ export const updateSmtpSettings = async (
       }
     }
 
-    await systemSettingsService.updateSmtpSettings(
+    const settings = await SystemSettings.updateSmtpSettings(
       {
         enabled,
         host,
@@ -66,20 +66,19 @@ export const updateSmtpSettings = async (
         username,
         password,
         secure,
-      }
+      },
+      req.user?._id as any
     );
 
-    // Fetch updated settings
-    const updatedSettings = await systemSettingsService.getSettings();
-    const smtpSettings = updatedSettings.smtp
+    const smtpSettings = settings.smtp
       ? {
-          enabled: updatedSettings.smtp.enabled,
-          host: updatedSettings.smtp.host,
-          port: updatedSettings.smtp.port,
-          username: updatedSettings.smtp.username,
-          secure: updatedSettings.smtp.secure,
-          lastChecked: updatedSettings.smtp.lastChecked,
-          lastSync: updatedSettings.smtp.lastSync,
+          enabled: settings.smtp.enabled,
+          host: settings.smtp.host,
+          port: settings.smtp.port,
+          username: settings.smtp.username,
+          secure: settings.smtp.secure,
+          lastChecked: settings.smtp.lastChecked,
+          lastSync: settings.smtp.lastSync,
         }
       : null;
 
@@ -193,7 +192,7 @@ export const syncInboundEmails = async (
   res: Response
 ): Promise<void> => {
   try {
-    const settings = await systemSettingsService.getSettings();
+    const settings = await SystemSettings.getSettings();
 
     if (!settings.smtp?.enabled) {
       res.status(400).json({

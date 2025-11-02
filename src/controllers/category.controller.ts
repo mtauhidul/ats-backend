@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Category } from '../models';
+import { categoryService } from '../services/firestore';
 import { asyncHandler, successResponse } from '../utils/helpers';
 import { NotFoundError, ValidationError as CustomValidationError } from '../utils/errors';
 import logger from '../utils/logger';
@@ -9,12 +9,15 @@ export const createCategory = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const data: CreateCategoryInput = req.body;
 
-    const existingCategory = await Category.findOne({ name: data.name });
+    const allCategories = await categoryService.find([]);
+    const existingCategory = allCategories.find((c: any) => c.name === data.name);
     if (existingCategory) {
       throw new CustomValidationError(`Category already exists with name: ${data.name}`);
     }
 
-    const category = await Category.create({ ...data, createdBy: req.user?._id });
+    const categoryId = await categoryService.create({ ...data, createdBy: req.user?.id } as any);
+    const category = await categoryService.findById(categoryId);
+    if (!category) throw new NotFoundError('Category not found after creation');
     logger.info(`Category created: ${category.name}`);
     successResponse(res, category, 'Category created successfully', 201);
   }
@@ -22,14 +25,15 @@ export const createCategory = asyncHandler(
 
 export const getCategories = asyncHandler(
   async (_req: Request, res: Response): Promise<void> => {
-    const categories = await Category.find().sort({ name: 1 });
+    let categories = await categoryService.find([]);
+    categories = categories.sort((a: any, b: any) => a.name.localeCompare(b.name));
     successResponse(res, categories, 'Categories retrieved successfully');
   }
 );
 
 export const getCategoryById = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const category = await Category.findById(req.params.id);
+    const category = await categoryService.findById(req.params.id);
     if (!category) throw new NotFoundError('Category not found');
     successResponse(res, category, 'Category retrieved successfully');
   }
@@ -38,32 +42,40 @@ export const getCategoryById = asyncHandler(
 export const updateCategory = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const updates: UpdateCategoryInput = req.body;
-    const category = await Category.findById(req.params.id);
+    const category = await categoryService.findById(req.params.id);
 
     if (!category) throw new NotFoundError('Category not found');
 
     if (updates.name && updates.name !== category.name) {
-      const existing = await Category.findOne({ name: updates.name, _id: { $ne: req.params.id } });
+      const allCategories = await categoryService.find([]);
+      const existing = allCategories.find(
+        (c: any) => c.name === updates.name && c.id !== req.params.id
+      );
       if (existing) {
         throw new CustomValidationError(`Category already exists with name: ${updates.name}`);
       }
     }
 
-    Object.assign(category, updates);
-    category.updatedBy = req.user?._id as any;
-    await category.save();
+    const updateData: any = {
+      ...updates,
+      updatedBy: req.user?.id,
+      updatedAt: new Date(),
+    };
+    await categoryService.update(req.params.id, updateData);
 
-    logger.info(`Category updated: ${category.name}`);
-    successResponse(res, category, 'Category updated successfully');
+    const updatedCategory = await categoryService.findById(req.params.id);
+    if (!updatedCategory) throw new NotFoundError('Category not found after update');
+    logger.info(`Category updated: ${updatedCategory.name}`);
+    successResponse(res, updatedCategory, 'Category updated successfully');
   }
 );
 
 export const deleteCategory = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const category = await Category.findById(req.params.id);
+    const category = await categoryService.findById(req.params.id);
     if (!category) throw new NotFoundError('Category not found');
 
-    await category.deleteOne();
+    await categoryService.delete(req.params.id);
     logger.info(`Category deleted: ${category.name}`);
     successResponse(res, null, 'Category deleted successfully');
   }

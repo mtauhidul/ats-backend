@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { INotification, Notification, User } from "../models";
+import { notificationService, userService } from "../services/firestore";
 import logger from "../utils/logger";
 
 /**
@@ -10,28 +10,27 @@ export const getNotifications = async (req: Request, res: Response) => {
     const userId = req.userId;
 
     // First, clean up any expired important notices
-    await Notification.deleteMany({
-      isImportant: true,
-      expiresAt: { $lt: new Date() },
-    });
+    const allNotifications = await notificationService.find([]);
+    const expiredNotifications = allNotifications.filter((n: any) => 
+      n.isImportant && n.expiresAt && new Date(n.expiresAt) < new Date()
+    );
+    
+    await Promise.all(
+      expiredNotifications.map((n: any) => notificationService.delete(n.id))
+    );
 
-    const notifications = await Notification.find({ userId })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    // Transform _id to id for frontend compatibility
-    const transformedNotifications = notifications.map((notif) => ({
-      ...notif,
-      id: notif._id.toString(),
-      _id: undefined,
-    }));
+    // Get user's notifications
+    let notifications = await notificationService.find([]);
+    notifications = notifications
+      .filter((n: any) => n.userId === userId)
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     res.status(200).json({
       status: "success",
       data: {
-        notifications: transformedNotifications,
-        total: transformedNotifications.length,
-        unread: transformedNotifications.filter((n: any) => !n.read).length,
+        notifications,
+        total: notifications.length,
+        unread: notifications.filter((n: any) => !n.read).length,
       },
     });
   } catch (error: any) {
@@ -52,12 +51,9 @@ export const getNotificationById = async (req: Request, res: Response): Promise<
     const { id } = req.params;
     const userId = req.userId;
 
-    const notification = await Notification.findOne({
-      _id: id,
-      userId,
-    }).lean();
+    const notification = await notificationService.findById(id);
 
-    if (!notification) {
+    if (!notification || notification.userId !== userId) {
       res.status(404).json({
         status: "error",
         message: "Notification not found",
@@ -65,15 +61,9 @@ export const getNotificationById = async (req: Request, res: Response): Promise<
       return;
     }
 
-    const transformedNotification = {
-      ...notification,
-      id: notification._id.toString(),
-      _id: undefined,
-    };
-
     res.status(200).json({
       status: "success",
-      data: transformedNotification,
+      data: notification,
     });
   } catch (error: any) {
     logger.error("Error fetching notification:", error);
@@ -93,30 +83,22 @@ export const createNotification = async (req: Request, res: Response) => {
     const userId = req.userId;
     const { type, title, message, relatedEntity } = req.body;
 
-    const notification = await Notification.create({
+    const notificationId = await notificationService.create({
       userId,
       type,
       title,
       message,
       relatedEntity: relatedEntity || null,
       read: false,
-    });
+    } as any);
 
-    const notificationObj = notification.toObject() as INotification & {
-      _id: any;
-    };
-
-    const transformedNotification = {
-      ...notificationObj,
-      id: notificationObj._id.toString(),
-      _id: undefined,
-    };
+    const notification = await notificationService.findById(notificationId);
 
     logger.info(`Notification created for user ${userId}: ${title}`);
 
     res.status(201).json({
       status: "success",
-      data: transformedNotification,
+      data: notification,
     });
   } catch (error: any) {
     logger.error("Error creating notification:", error);
@@ -137,13 +119,9 @@ export const updateNotification = async (req: Request, res: Response): Promise<v
     const userId = req.userId;
     const { read } = req.body;
 
-    const notification = await Notification.findOneAndUpdate(
-      { _id: id, userId },
-      { read },
-      { new: true }
-    ).lean();
+    const notification = await notificationService.findById(id);
 
-    if (!notification) {
+    if (!notification || notification.userId !== userId) {
       res.status(404).json({
         status: "error",
         message: "Notification not found",
@@ -151,15 +129,13 @@ export const updateNotification = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const transformedNotification = {
-      ...notification,
-      id: notification._id.toString(),
-      _id: undefined,
-    };
+    await notificationService.update(id, { read } as any);
+
+    const updatedNotification = await notificationService.findById(id);
 
     res.status(200).json({
       status: "success",
-      data: transformedNotification,
+      data: updatedNotification,
     });
   } catch (error: any) {
     logger.error("Error updating notification:", error);
@@ -179,18 +155,17 @@ export const deleteNotification = async (req: Request, res: Response): Promise<v
     const { id } = req.params;
     const userId = req.userId;
 
-    const notification = await Notification.findOneAndDelete({
-      _id: id,
-      userId,
-    });
+    const notification = await notificationService.findById(id);
 
-    if (!notification) {
+    if (!notification || notification.userId !== userId) {
       res.status(404).json({
         status: "error",
         message: "Notification not found",
       });
       return;
     }
+
+    await notificationService.delete(id);
 
     res.status(200).json({
       status: "success",
@@ -213,13 +188,18 @@ export const deleteAllNotifications = async (req: Request, res: Response) => {
   try {
     const userId = req.userId;
 
-    const result = await Notification.deleteMany({ userId });
+    let allNotifications = await notificationService.find([]);
+    const userNotifications = allNotifications.filter((n: any) => n.userId === userId);
+
+    await Promise.all(
+      userNotifications.map((n: any) => notificationService.delete(n.id))
+    );
 
     res.status(200).json({
       status: "success",
       message: "All notifications deleted successfully",
       data: {
-        deletedCount: result.deletedCount,
+        deletedCount: userNotifications.length,
       },
     });
   } catch (error: any) {
@@ -239,22 +219,27 @@ export const markAllAsRead = async (req: Request, res: Response) => {
   try {
     const userId = req.userId;
 
-    await Notification.updateMany({ userId, read: false }, { read: true });
+    let allNotifications = await notificationService.find([]);
+    const userUnreadNotifications = allNotifications.filter(
+      (n: any) => n.userId === userId && !n.read
+    );
 
-    const notifications = await Notification.find({ userId })
-      .sort({ createdAt: -1 })
-      .lean();
+    await Promise.all(
+      userUnreadNotifications.map((n: any) =>
+        notificationService.update(n.id, { read: true } as any)
+      )
+    );
 
-    const transformedNotifications = notifications.map((notif) => ({
-      ...notif,
-      id: notif._id.toString(),
-      _id: undefined,
-    }));
+    // Get updated notifications
+    allNotifications = await notificationService.find([]);
+    let notifications = allNotifications
+      .filter((n: any) => n.userId === userId)
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     res.status(200).json({
       status: "success",
       data: {
-        notifications: transformedNotifications,
+        notifications,
       },
     });
   } catch (error: any) {
@@ -275,9 +260,10 @@ export const broadcastImportantNotice = async (req: Request, res: Response): Pro
     const { type, title, message, priority, expiresAt } = req.body;
 
     // Get all active users
-    const users = await User.find({ isActive: true }).select('_id');
+    let allUsers = await userService.find([]);
+    const activeUsers = allUsers.filter((u: any) => u.isActive !== false);
 
-    if (users.length === 0) {
+    if (activeUsers.length === 0) {
       res.status(404).json({
         status: "error",
         message: "No active users found",
@@ -286,30 +272,32 @@ export const broadcastImportantNotice = async (req: Request, res: Response): Pro
     }
 
     // Create notifications for all users
-    const notifications = users.map((user) => ({
-      userId: user._id,
-      type: type || 'system',
-      title,
-      message,
-      isImportant: true,
-      priority: priority || 'high',
-      expiresAt: expiresAt ? new Date(expiresAt) : undefined,
-      read: false,
-      relatedEntity: null,
-    }));
+    const notificationPromises = activeUsers.map((user: any) =>
+      notificationService.create({
+        userId: user.id,
+        type: type || 'system',
+        title,
+        message,
+        isImportant: true,
+        priority: priority || 'high',
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+        read: false,
+        relatedEntity: null,
+      } as any)
+    );
 
-    const createdNotifications = await Notification.insertMany(notifications);
+    await Promise.all(notificationPromises);
 
     logger.info(
-      `Important notice broadcast to ${users.length} users by admin: ${title}`
+      `Important notice broadcast to ${activeUsers.length} users by admin: ${title}`
     );
 
     res.status(201).json({
       status: "success",
-      message: `Important notice sent to ${users.length} team members`,
+      message: `Important notice sent to ${activeUsers.length} team members`,
       data: {
-        count: createdNotifications.length,
-        recipients: users.length,
+        count: activeUsers.length,
+        recipients: activeUsers.length,
       },
     });
   } catch (error: any) {
@@ -328,12 +316,16 @@ export const broadcastImportantNotice = async (req: Request, res: Response): Pro
  */
 export const cleanupExpiredNotices = async (): Promise<number> => {
   try {
-    const result = await Notification.deleteMany({
-      isImportant: true,
-      expiresAt: { $lt: new Date() },
-    });
+    const allNotifications = await notificationService.find([]);
+    const expiredNotifications = allNotifications.filter((n: any) => 
+      n.isImportant && n.expiresAt && new Date(n.expiresAt) < new Date()
+    );
 
-    const deletedCount = result.deletedCount || 0;
+    await Promise.all(
+      expiredNotifications.map((n: any) => notificationService.delete(n.id))
+    );
+
+    const deletedCount = expiredNotifications.length;
 
     if (deletedCount > 0) {
       logger.info(`Cleaned up ${deletedCount} expired important notices`);

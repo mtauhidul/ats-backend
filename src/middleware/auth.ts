@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import { IUser, User } from "../models";
+import { userService, IUser } from "../services/firestore";
 import { AuthenticationError, AuthorizationError } from "../utils/errors";
 import { verifyAccessToken, TokenPayload } from "../utils/auth";
 
@@ -7,7 +7,7 @@ import { verifyAccessToken, TokenPayload } from "../utils/auth";
 declare global {
   namespace Express {
     interface Request {
-      user?: IUser;
+      user?: IUser & { id: string };
       userId?: string;
       tokenPayload?: TokenPayload;
     }
@@ -39,9 +39,9 @@ export const authenticate = async (
     }
 
     // Find user in database
-    const user = await User.findById(payload.userId);
+    const user = await userService.findById(payload.userId);
 
-    if (!user) {
+    if (!user || !user.id) {
       throw new AuthenticationError("User not found");
     }
 
@@ -51,8 +51,8 @@ export const authenticate = async (
     }
 
     // Attach user to request
-    req.user = user;
-    req.userId = String(user._id);
+    req.user = user as IUser & { id: string };
+    req.userId = user.id;
     req.tokenPayload = payload;
 
     next();
@@ -176,11 +176,11 @@ export const optionalAuth = async (
       const payload = verifyAccessToken(token);
 
       if (payload) {
-        const user = await User.findById(payload.userId);
+        const user = await userService.findById(payload.userId);
 
-        if (user && user.isActive) {
-          req.user = user;
-          req.userId = String(user._id);
+        if (user && user.id && user.isActive) {
+          req.user = user as IUser & { id: string };
+          req.userId = user.id;
           req.tokenPayload = payload;
         }
       }

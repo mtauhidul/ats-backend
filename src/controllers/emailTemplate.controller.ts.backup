@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { emailTemplateService } from '../services/firestore';
+import { EmailTemplate } from '../models/EmailTemplate';
 
 /**
  * Extract variables from template body
@@ -28,21 +28,26 @@ export const getEmailTemplates = async (req: Request, res: Response): Promise<vo
   try {
     const { type, isDefault, isActive } = req.query;
     
-    // Fetch all templates
-    const allTemplates = await emailTemplateService.find([]);
+    const filter: any = {};
     
-    // Apply filters in memory
-    const templates = allTemplates.filter((t: any) => {
-      if (type && t.type !== type) return false;
-      if (isDefault !== undefined && t.isDefault !== (isDefault === 'true')) return false;
-      if (isActive !== undefined) {
-        if (t.isActive !== (isActive === 'true')) return false;
-      } else {
-        // By default, only show active templates
-        if (t.isActive !== true) return false;
-      }
-      return true;
-    }).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    if (type) {
+      filter.type = type;
+    }
+    
+    if (isDefault !== undefined) {
+      filter.isDefault = isDefault === 'true';
+    }
+    
+    if (isActive !== undefined) {
+      filter.isActive = isActive === 'true';
+    } else {
+      // By default, only show active templates
+      filter.isActive = true;
+    }
+    
+    const templates = await EmailTemplate.find(filter)
+      .populate('createdBy', 'firstName lastName email')
+      .sort({ createdAt: -1 });
     
     res.json({
       success: true,
@@ -67,7 +72,8 @@ export const getEmailTemplateById = async (req: Request, res: Response): Promise
   try {
     const { id } = req.params;
     
-    const template = await emailTemplateService.findById(id);
+    const template = await EmailTemplate.findById(id)
+      .populate('createdBy', 'firstName lastName email');
     
     if (!template) {
       res.status(404).json({
@@ -99,14 +105,12 @@ export const getTemplatesByType = async (req: Request, res: Response): Promise<v
   try {
     const { type } = req.params;
     
-    const allTemplates = await emailTemplateService.find([]);
-    const templates = allTemplates
-      .filter((t: any) => t.type === type && t.isActive === true)
-      .sort((a: any, b: any) => {
-        // Sort by isDefault first (true first), then by createdAt descending
-        if (a.isDefault !== b.isDefault) return b.isDefault ? 1 : -1;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      });
+    const templates = await EmailTemplate.find({
+      type,
+      isActive: true
+    })
+      .populate('createdBy', 'firstName lastName email')
+      .sort({ isDefault: -1, createdAt: -1 });
     
     res.json({
       success: true,
@@ -144,7 +148,7 @@ export const createEmailTemplate = async (req: Request, res: Response): Promise<
     const variables = extractVariables(body);
     
     // Create template
-    const templateId = await emailTemplateService.create({
+    const template = new EmailTemplate({
       name,
       subject,
       body,
@@ -153,9 +157,12 @@ export const createEmailTemplate = async (req: Request, res: Response): Promise<
       isDefault,
       isActive: true,
       createdBy: req.user?.id
-    } as any);
+    });
     
-    const template = await emailTemplateService.findById(templateId);
+    await template.save();
+    
+    // Populate createdBy for response
+    await template.populate('createdBy', 'firstName lastName email');
     
     res.status(201).json({
       success: true,
@@ -181,7 +188,7 @@ export const updateEmailTemplate = async (req: Request, res: Response): Promise<
     const { id } = req.params;
     const { name, subject, body, type, isDefault, isActive } = req.body;
     
-    const template = await emailTemplateService.findById(id);
+    const template = await EmailTemplate.findById(id);
     
     if (!template) {
       res.status(404).json({
@@ -191,27 +198,28 @@ export const updateEmailTemplate = async (req: Request, res: Response): Promise<
       return;
     }
     
-    // Build updates object
-    const updates: any = {};
-    if (name !== undefined) updates.name = name;
-    if (subject !== undefined) updates.subject = subject;
-    if (type !== undefined) updates.type = type;
-    if (isDefault !== undefined) updates.isDefault = isDefault;
-    if (isActive !== undefined) updates.isActive = isActive;
+    // Update fields
+    if (name !== undefined) template.name = name;
+    if (subject !== undefined) template.subject = subject;
+    if (type !== undefined) template.type = type;
+    if (isDefault !== undefined) template.isDefault = isDefault;
+    if (isActive !== undefined) template.isActive = isActive;
     
     if (body !== undefined) {
-      updates.body = body;
+      template.body = body;
       // Re-extract variables when body changes
-      updates.variables = extractVariables(body);
+      template.variables = extractVariables(body);
     }
     
-    await emailTemplateService.update(id, updates);
-    const updatedTemplate = await emailTemplateService.findById(id);
+    await template.save();
+    
+    // Populate createdBy for response
+    await template.populate('createdBy', 'firstName lastName email');
     
     res.json({
       success: true,
       message: 'Email template updated successfully',
-      data: updatedTemplate
+      data: template
     });
   } catch (error: any) {
     console.error('Error updating email template:', error);
@@ -231,7 +239,7 @@ export const deleteEmailTemplate = async (req: Request, res: Response): Promise<
   try {
     const { id } = req.params;
     
-    const template = await emailTemplateService.findById(id);
+    const template = await EmailTemplate.findById(id);
     
     if (!template) {
       res.status(404).json({
@@ -242,7 +250,8 @@ export const deleteEmailTemplate = async (req: Request, res: Response): Promise<
     }
     
     // Soft delete - set isActive to false
-    await emailTemplateService.update(id, { isActive: false });
+    template.isActive = false;
+    await template.save();
     
     res.json({
       success: true,
@@ -266,7 +275,7 @@ export const duplicateEmailTemplate = async (req: Request, res: Response): Promi
   try {
     const { id } = req.params;
     
-    const originalTemplate = await emailTemplateService.findById(id);
+    const originalTemplate = await EmailTemplate.findById(id);
     
     if (!originalTemplate) {
       res.status(404).json({
@@ -277,7 +286,7 @@ export const duplicateEmailTemplate = async (req: Request, res: Response): Promi
     }
     
     // Create duplicate with modified name
-    const duplicateId = await emailTemplateService.create({
+    const duplicate = new EmailTemplate({
       name: `${originalTemplate.name} (Copy)`,
       subject: originalTemplate.subject,
       body: originalTemplate.body,
@@ -286,9 +295,12 @@ export const duplicateEmailTemplate = async (req: Request, res: Response): Promi
       isDefault: false, // Duplicates are never default
       isActive: true,
       createdBy: req.user?.id
-    } as any);
+    });
     
-    const duplicate = await emailTemplateService.findById(duplicateId);
+    await duplicate.save();
+    
+    // Populate createdBy for response
+    await duplicate.populate('createdBy', 'firstName lastName email');
     
     res.status(201).json({
       success: true,
@@ -311,10 +323,10 @@ export const duplicateEmailTemplate = async (req: Request, res: Response): Promi
  */
 export const getDefaultTemplates = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const allTemplates = await emailTemplateService.find([]);
-    const templates = allTemplates
-      .filter((t: any) => t.isDefault === true && t.isActive === true)
-      .sort((a: any, b: any) => a.type.localeCompare(b.type));
+    const templates = await EmailTemplate.find({
+      isDefault: true,
+      isActive: true
+    }).sort({ type: 1 });
     
     res.json({
       success: true,

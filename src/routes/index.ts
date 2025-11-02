@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import authRoutes from './auth.routes';
 import emailAccountRoutes from './emailAccount.routes';
-import emailAutomationRoutes from './emailAutomation.routes';
+// import emailAutomationRoutes from './emailAutomation.routes'; // TODO: Reimplement with Firestore
 import emailTemplateRoutes from './emailTemplate.routes';
 import resumeRoutes from './resume.routes';
 import applicationRoutes from './application.routes';
@@ -33,7 +33,7 @@ router.use('/email-templates', emailTemplateRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/messages', messageRoutes);
 router.use('/email-accounts', emailAccountRoutes);
-router.use('/email-automation', emailAutomationRoutes);
+// router.use('/email-automation', emailAutomationRoutes); // TODO: Reimplement with Firestore
 router.use('/settings', settingsRoutes);
 router.use('/resumes', resumeRoutes);
 router.use('/applications', applicationRoutes);

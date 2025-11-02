@@ -3,7 +3,7 @@
  * Tracks user activities across the system
  */
 
-import ActivityLog from '../models/ActivityLog';
+import { activityLogService } from './firestore';
 import logger from '../utils/logger';
 
 export interface LogActivityParams {
@@ -20,14 +20,14 @@ export interface LogActivityParams {
  */
 export const logActivity = async (params: LogActivityParams): Promise<void> => {
   try {
-    await ActivityLog.create({
+    await activityLogService.create({
       userId: params.userId,
       action: params.action,
       resourceType: params.resourceType,
       resourceId: params.resourceId,
       resourceName: params.resourceName,
       metadata: params.metadata,
-    });
+    } as any);
   } catch (error) {
     // Don't throw error to avoid breaking main operations
     logger.error('Failed to log activity:', error);
@@ -41,8 +41,10 @@ export const getUserActivities = async (
   userId: string,
   limit: number = 20
 ): Promise<any[]> => {
-  return ActivityLog.find({ userId })
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .lean();
+  let activities = await activityLogService.find([]);
+  activities = activities
+    .filter((log: any) => log.userId === userId)
+    .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, limit);
+  return activities;
 };

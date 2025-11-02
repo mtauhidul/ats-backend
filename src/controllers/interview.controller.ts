@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Interview, Candidate, Job } from '../models';
+import { interviewService, candidateService, jobService } from '../services/firestore';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
 import { NotFoundError } from '../utils/errors';
 import logger from '../utils/logger';
@@ -24,16 +24,28 @@ export const getInterviews = asyncHandler(
       sortOrder = 'desc',
     } = req.query as any;
 
-    // Build filter
-    const filter: any = {};
-    if (candidateId) filter.candidateId = candidateId;
-    if (jobId) filter.jobId = jobId;
-    if (clientId) filter.clientId = clientId;
-    if (status) filter.status = status;
-    if (type) filter.type = type;
+    // Get all interviews
+    let allInterviews = await interviewService.find([]);
 
-    // Get total count
-    const totalCount = await Interview.countDocuments(filter);
+    // Apply filters
+    if (candidateId) {
+      allInterviews = allInterviews.filter((interview: any) => interview.candidateId === candidateId);
+    }
+    if (jobId) {
+      allInterviews = allInterviews.filter((interview: any) => interview.jobId === jobId);
+    }
+    if (clientId) {
+      allInterviews = allInterviews.filter((interview: any) => interview.clientId === clientId);
+    }
+    if (status) {
+      allInterviews = allInterviews.filter((interview: any) => interview.status === status);
+    }
+    if (type) {
+      allInterviews = allInterviews.filter((interview: any) => interview.type === type);
+    }
+
+    // Get total count after filtering
+    const totalCount = allInterviews.length;
 
     // Calculate pagination
     const pagination = paginateResults(totalCount, {
@@ -43,23 +55,18 @@ export const getInterviews = asyncHandler(
       order: sortOrder,
     });
 
-    // Calculate skip
+    // Apply sorting
+    allInterviews.sort((a: any, b: any) => {
+      const aVal = a[sortBy];
+      const bVal = b[sortBy];
+      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    // Apply pagination
     const skip = (page - 1) * limit;
-
-    // Build sort object
-    const sort: any = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
-
-    // Fetch data
-    const interviews = await Interview.find(filter)
-      .populate('candidateId', 'firstName lastName email')
-      .populate('jobId', 'title')
-      .populate('clientId', 'companyName')
-      .populate('interviewerIds', 'firstName lastName email avatar')
-      .populate('organizerId', 'firstName lastName email')
-      .sort(sort)
-      .skip(skip)
-      .limit(limit);
+    const interviews = allInterviews.slice(skip, skip + limit);
 
     successResponse(
       res,
@@ -79,14 +86,7 @@ export const getInterviewById = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const interview = await Interview.findById(id)
-      .populate('candidateId', 'firstName lastName email phone')
-      .populate('jobId', 'title description location')
-      .populate('clientId', 'companyName')
-      .populate('applicationId', 'resumeUrl')
-      .populate('interviewerIds', 'firstName lastName email avatar role')
-      .populate('organizerId', 'firstName lastName email')
-      .populate('feedback.interviewerId', 'firstName lastName email avatar');
+    const interview = await interviewService.findById(id);
 
     if (!interview) {
       throw new NotFoundError('Interview not found');
@@ -104,63 +104,59 @@ export const createInterview = asyncHandler(
     const data = req.body;
 
     // Verify candidate exists
-    const candidate = await Candidate.findById(data.candidateId);
+    const candidate = await candidateService.findById(data.candidateId);
     if (!candidate) {
       throw new NotFoundError('Candidate not found');
     }
 
     // Verify job exists
-    const job = await Job.findById(data.jobId);
+    const job = await jobService.findById(data.jobId);
     if (!job) {
       throw new NotFoundError('Job not found');
     }
 
     // Create interview
-    const interview = await Interview.create({
+    const interviewId = await interviewService.create({
       ...data,
       status: 'scheduled',
-      createdBy: req.user?._id,
-      organizerId: data.organizerId || req.user?._id,
-    });
+      createdBy: req.user?.id,
+      organizerId: data.organizerId || req.user?.id,
+    } as any);
+
+    let interview = await interviewService.findById(interviewId);
 
     // Create Zoom meeting if requested and interview is video type
-    if (data.createZoomMeeting && interview.type === 'video') {
+    if (data.createZoomMeeting && interview!.type === 'video') {
       try {
         const zoomMeeting = await zoomService.createMeeting({
-          topic: `${interview.title} - ${candidate.firstName} ${candidate.lastName}`,
-          startTime: interview.scheduledAt,
-          duration: interview.duration,
-          timezone: interview.timezone,
-          agenda: interview.description || `Interview for ${job.title}`,
+          topic: `${interview!.title} - ${candidate.firstName} ${candidate.lastName}`,
+          startTime: interview!.scheduledAt,
+          duration: interview!.duration,
+          timezone: interview!.timezone,
+          agenda: interview!.description || `Interview for ${job.title}`,
         });
 
-        interview.meetingLink = zoomMeeting.join_url;
-        interview.meetingId = zoomMeeting.id;
-        interview.meetingPassword = zoomMeeting.password;
-        interview.zoomMeetingDetails = zoomMeeting;
-        await interview.save();
+        await interviewService.update(interviewId, {
+          meetingLink: zoomMeeting.join_url,
+          meetingId: zoomMeeting.id,
+          meetingPassword: zoomMeeting.password,
+          zoomMeetingDetails: zoomMeeting,
+        } as any);
 
-        logger.info(`Zoom meeting created for interview: ${interview._id}`);
+        interview = await interviewService.findById(interviewId);
+
+        logger.info(`Zoom meeting created for interview: ${interview!.id}`);
       } catch (error: any) {
         logger.error('Failed to create Zoom meeting:', error);
         // Don't fail the interview creation if Zoom fails
       }
     }
 
-    // Populate references
-    await interview.populate([
-      { path: 'candidateId', select: 'firstName lastName email' },
-      { path: 'jobId', select: 'title' },
-      { path: 'clientId', select: 'name' },
-      { path: 'interviewerIds', select: 'firstName lastName email avatar' },
-      { path: 'organizerId', select: 'firstName lastName email' },
-    ]);
-
     // Send email notification to candidate if sendEmail flag is true
     if (data.sendEmail) {
       try {
-        const interviewerNames = interview.interviewerIds && Array.isArray(interview.interviewerIds)
-          ? interview.interviewerIds
+        const interviewerNames = interview!.interviewerIds && Array.isArray(interview!.interviewerIds)
+          ? interview!.interviewerIds
               .map((interviewer: any) => 
                 `${interviewer.firstName || ''} ${interviewer.lastName || ''}`.trim()
               )
@@ -171,12 +167,12 @@ export const createInterview = asyncHandler(
           candidateEmail: candidate.email,
           candidateName: `${candidate.firstName} ${candidate.lastName}`,
           jobTitle: job.title,
-          interviewTitle: interview.title,
-          interviewType: interview.type,
-          scheduledAt: interview.scheduledAt,
-          duration: interview.duration,
-          meetingLink: interview.meetingLink,
-          meetingPassword: interview.meetingPassword,
+          interviewTitle: interview!.title,
+          interviewType: interview!.type,
+          scheduledAt: interview!.scheduledAt,
+          duration: interview!.duration,
+          meetingLink: interview!.meetingLink,
+          meetingPassword: interview!.meetingPassword,
           interviewerNames: interviewerNames.length > 0 ? interviewerNames : undefined,
           isInstant: data.isInstant || false,
         });
@@ -188,7 +184,7 @@ export const createInterview = asyncHandler(
       }
     }
 
-    logger.info(`Interview created: ${interview.title} for candidate ${candidate.email} by ${req.user?.email}`);
+    logger.info(`Interview created: ${interview!.title} for candidate ${candidate.email} by ${req.user?.email}`);
 
     successResponse(res, interview, 'Interview scheduled successfully', 201);
   }
@@ -203,19 +199,10 @@ export const updateInterview = asyncHandler(
     const updates = req.body;
 
     // Add updatedBy
-    updates.updatedBy = req.user?._id;
+    updates.updatedBy = req.user?.id;
 
-    const interview = await Interview.findByIdAndUpdate(
-      id,
-      { ...updates },
-      { new: true, runValidators: true }
-    ).populate([
-      { path: 'candidateId', select: 'firstName lastName email' },
-      { path: 'jobId', select: 'title' },
-      { path: 'clientId', select: 'name' },
-      { path: 'interviewerIds', select: 'firstName lastName email avatar' },
-      { path: 'organizerId', select: 'firstName lastName email' },
-    ]);
+    await interviewService.update(id, updates as any);
+    const interview = await interviewService.findById(id);
 
     if (!interview) {
       throw new NotFoundError('Interview not found');
@@ -235,19 +222,14 @@ export const cancelInterview = asyncHandler(
     const { id } = req.params;
     const { reason } = req.body;
 
-    const interview = await Interview.findByIdAndUpdate(
-      id,
-      {
-        status: 'cancelled',
-        cancelledAt: new Date(),
-        cancellationReason: reason,
-        updatedBy: req.user?._id,
-      },
-      { new: true }
-    ).populate([
-      { path: 'candidateId', select: 'firstName lastName email' },
-      { path: 'jobId', select: 'title' },
-    ]);
+    await interviewService.update(id, {
+      status: 'cancelled',
+      cancelledAt: new Date(),
+      cancellationReason: reason,
+      updatedBy: req.user?.id,
+    } as any);
+
+    const interview = await interviewService.findById(id);
 
     if (!interview) {
       throw new NotFoundError('Interview not found');
@@ -267,36 +249,37 @@ export const addFeedback = asyncHandler(
     const { id } = req.params;
     const feedbackData = req.body;
 
-    const interview = await Interview.findById(id);
+    const interview = await interviewService.findById(id);
 
     if (!interview) {
       throw new NotFoundError('Interview not found');
     }
 
     // Add feedback
-    interview.feedback = interview.feedback || [];
-    interview.feedback.push({
-      interviewerId: req.user?._id,
+    const currentFeedback = interview.feedback || [];
+    currentFeedback.push({
+      interviewerId: req.user?.id,
       ...feedbackData,
       submittedAt: new Date(),
     });
 
+    // Prepare update
+    const updates: any = {
+      feedback: currentFeedback,
+    };
+
     // If all interviewers provided feedback, mark as completed
-    if (interview.feedback.length >= interview.interviewerIds.length) {
-      interview.status = 'completed';
-      interview.completedAt = new Date();
+    if (currentFeedback.length >= (interview.interviewerIds?.length || 0)) {
+      updates.status = 'completed';
+      updates.completedAt = new Date();
     }
 
-    await interview.save();
-
-    await interview.populate([
-      { path: 'candidateId', select: 'firstName lastName email' },
-      { path: 'feedback.interviewerId', select: 'firstName lastName email avatar' },
-    ]);
+    await interviewService.update(id, updates);
+    const updatedInterview = await interviewService.findById(id);
 
     logger.info(`Feedback added to interview ${id} by ${req.user?.email}`);
 
-    successResponse(res, interview, 'Feedback added successfully');
+    successResponse(res, updatedInterview, 'Feedback added successfully');
   }
 );
 
@@ -307,11 +290,13 @@ export const deleteInterview = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const interview = await Interview.findByIdAndDelete(id);
+    const interview = await interviewService.findById(id);
 
     if (!interview) {
       throw new NotFoundError('Interview not found');
     }
+
+    await interviewService.delete(id);
 
     logger.info(`Interview deleted: ${id} by ${req.user?.email}`);
 
@@ -326,15 +311,23 @@ export const getUpcomingInterviews = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { limit = 10 } = req.query;
 
-    const interviews = await Interview.find({
-      scheduledAt: { $gte: new Date() },
-      status: { $in: ['scheduled', 'confirmed'] },
-    })
-      .populate('candidateId', 'firstName lastName email')
-      .populate('jobId', 'title')
-      .populate('interviewerIds', 'firstName lastName email avatar')
-      .sort({ scheduledAt: 1 })
-      .limit(Number(limit));
+    // Get all interviews
+    const allInterviews = await interviewService.find([]);
+    
+    // Filter upcoming interviews
+    const now = new Date();
+    let upcomingInterviews = allInterviews.filter((interview: any) =>
+      new Date(interview.scheduledAt) >= now &&
+      ['scheduled', 'confirmed'].includes(interview.status)
+    );
+
+    // Sort by scheduled time
+    upcomingInterviews.sort((a: any, b: any) =>
+      new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+    );
+
+    // Apply limit
+    const interviews = upcomingInterviews.slice(0, Number(limit));
 
     successResponse(res, interviews, 'Upcoming interviews retrieved successfully');
   }
@@ -347,9 +340,7 @@ export const createZoomMeeting = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const interview = await Interview.findById(id)
-      .populate('candidateId', 'firstName lastName email')
-      .populate('jobId', 'title');
+    let interview = await interviewService.findById(id);
 
     if (!interview) {
       throw new NotFoundError('Interview not found');
@@ -360,21 +351,28 @@ export const createZoomMeeting = asyncHandler(
       return;
     }
 
+    // Get candidate and job details
+    const candidate = await candidateService.findById(interview.candidateId);
+    const job = await jobService.findById(interview.jobId);
+
     // Create Zoom meeting
     const zoomMeeting = await zoomService.createMeeting({
-      topic: `${interview.title} - ${(interview.candidateId as any).firstName} ${(interview.candidateId as any).lastName}`,
+      topic: `${interview.title} - ${candidate?.firstName} ${candidate?.lastName}`,
       startTime: interview.scheduledAt,
       duration: interview.duration,
       timezone: interview.timezone,
-      agenda: interview.description || `Interview for ${(interview.jobId as any).title}`,
+      agenda: interview.description || `Interview for ${job?.title}`,
     });
 
     // Update interview with Zoom details
-    interview.meetingLink = zoomMeeting.join_url;
-    interview.meetingId = zoomMeeting.id;
-    interview.meetingPassword = zoomMeeting.password;
-    interview.zoomMeetingDetails = zoomMeeting;
-    await interview.save();
+    await interviewService.update(id, {
+      meetingLink: zoomMeeting.join_url,
+      meetingId: zoomMeeting.id,
+      meetingPassword: zoomMeeting.password,
+      zoomMeetingDetails: zoomMeeting,
+    } as any);
+
+    interview = await interviewService.findById(id);
 
     logger.info(`Zoom meeting created for interview ${id}`);
 
@@ -396,19 +394,12 @@ export const completeInterview = asyncHandler(
     }
 
     // Find the interview
-    const interview = await Interview.findById(id)
-      .populate('candidateId', 'firstName lastName email')
-      .populate('jobId', 'title')
-      .populate('interviewerIds', 'firstName lastName email');
+    let interview = await interviewService.findById(id);
 
     if (!interview) {
       throw new NotFoundError('Interview not found');
     }
 
-    // Update interview status and add feedback
-    interview.status = 'completed';
-    interview.completedAt = new Date();
-    
     // Map recommendation to interview model format
     let mappedRecommendation: 'strong_yes' | 'yes' | 'maybe' | 'no' | 'strong_no' = 'maybe';
     if (recommendation === 'hire') mappedRecommendation = 'strong_yes';
@@ -416,9 +407,9 @@ export const completeInterview = asyncHandler(
     else if (recommendation === 'hold') mappedRecommendation = 'maybe';
     else if (recommendation === 'pending') mappedRecommendation = 'maybe';
     
-    // Add feedback to the interview (matching Interview model structure)
+    // Add feedback to the interview
     const feedbackEntry = {
-      interviewerId: req.user?._id as any,
+      interviewerId: req.user?.id as any,
       rating: Number(rating),
       strengths: strengths ? [strengths] : [],
       weaknesses: weaknesses ? [weaknesses] : [],
@@ -427,39 +418,36 @@ export const completeInterview = asyncHandler(
       submittedAt: new Date(),
     };
 
-    if (!interview.feedback) {
-      interview.feedback = [];
-    }
-    interview.feedback.push(feedbackEntry);
+    const currentFeedback = interview.feedback || [];
+    currentFeedback.push(feedbackEntry);
 
-    await interview.save();
+    // Update interview status
+    await interviewService.update(id, {
+      status: 'completed',
+      completedAt: new Date(),
+      feedback: currentFeedback,
+    } as any);
+
+    interview = await interviewService.findById(id);
 
     logger.info(`Interview ${id} completed by ${req.user?.email} with rating ${rating} and recommendation ${recommendation}`);
 
     // Log activity for the interviewer
-    if (req.user?._id) {
+    if (req.user?.id) {
       await logActivity({
-        userId: req.user._id.toString(),
+        userId: req.user.id,
         action: 'completed_interview',
         resourceType: 'interview',
         resourceId: id,
-        resourceName: `Interview for ${(interview.candidateId as any)?.firstName || 'Candidate'} ${(interview.candidateId as any)?.lastName || ''} - ${(interview.jobId as any)?.title || 'Position'}`,
+        resourceName: `Interview completed`,
         metadata: {
           rating,
           recommendation: mappedRecommendation,
-          candidateId: interview.candidateId,
-          jobId: interview.jobId,
+          candidateId: interview?.candidateId,
+          jobId: interview?.jobId,
         },
       });
     }
-
-    // Populate the updated interview
-    await interview.populate([
-      { path: 'candidateId', select: 'firstName lastName email' },
-      { path: 'jobId', select: 'title' },
-      { path: 'interviewerIds', select: 'firstName lastName email avatar' },
-      { path: 'feedback.interviewerId', select: 'firstName lastName email avatar' },
-    ]);
 
     logger.info(`Interview ${id} completed by ${req.user?.email} with rating ${rating}`);
 

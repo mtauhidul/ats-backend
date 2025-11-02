@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { EmailAccount } from '../models';
+import { emailAccountService } from '../services/firestore';
 import imapService from '../services/imap.service';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
 import { NotFoundError, ValidationError as CustomValidationError } from '../utils/errors';
@@ -20,7 +20,8 @@ export const createEmailAccount = asyncHandler(
     logger.info(`Creating email account for: ${data.email}`);
     
     // Check if email account already exists
-    const existingAccount = await EmailAccount.findOne({ email: data.email });
+    const allAccounts = await emailAccountService.find([]);
+    const existingAccount = allAccounts.find((acc: any) => acc.email === data.email);
     logger.info(`Existing account check result:`, existingAccount);
     
     if (existingAccount) {
@@ -28,12 +29,14 @@ export const createEmailAccount = asyncHandler(
     }
 
     // Create email account (password will be auto-encrypted by pre-save hook)
-    const emailAccount = await EmailAccount.create({
+    const accountId = await emailAccountService.create({
       ...data,
       createdBy: req.userId,
-    });
+    } as any);
 
-    logger.info(`Email account created: ${emailAccount.email} by user ${req.userId}`);
+    const emailAccount = await emailAccountService.findById(accountId);
+
+    logger.info(`Email account created: ${emailAccount?.email} by user ${req.userId}`);
 
     successResponse(res, emailAccount, 'Email account created successfully', 201);
   }
@@ -46,32 +49,34 @@ export const getEmailAccounts = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { page = 1, limit = 10, provider, isActive, search } = req.query as any as ListEmailAccountsQuery;
 
-    // Build filter
-    const filter: any = {};
-    if (provider) filter.provider = provider;
-    if (isActive !== undefined) filter.isActive = isActive;
+    // Get all accounts
+    let allAccounts = await emailAccountService.find([]);
+
+    // Apply filters
+    if (provider) {
+      allAccounts = allAccounts.filter((acc: any) => acc.provider === provider);
+    }
+    if (isActive !== undefined) {
+      allAccounts = allAccounts.filter((acc: any) => acc.isActive === isActive);
+    }
     if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-      ];
+      const searchLower = search.toLowerCase();
+      allAccounts = allAccounts.filter((acc: any) =>
+        acc.name?.toLowerCase().includes(searchLower) ||
+        acc.email?.toLowerCase().includes(searchLower)
+      );
     }
 
     // Get total count
-    const totalCount = await EmailAccount.countDocuments(filter);
+    const totalCount = allAccounts.length;
 
     // Calculate pagination
     const pagination = paginateResults(totalCount, { page, limit, sort: 'createdAt', order: 'desc' });
 
-    // Calculate skip
+    // Sort and paginate
+    allAccounts.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     const skip = (page - 1) * limit;
-
-    // Fetch data
-    const emailAccounts = await EmailAccount.find(filter)
-      .populate('createdBy', 'firstName lastName email')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const emailAccounts = allAccounts.slice(skip, skip + limit);
 
     successResponse(
       res,
@@ -91,7 +96,7 @@ export const getEmailAccountById = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const emailAccount = await EmailAccount.findById(id).populate('createdBy', 'firstName lastName email');
+    const emailAccount = await emailAccountService.findById(id);
 
     if (!emailAccount) {
       throw new NotFoundError('Email account not found');
@@ -109,7 +114,7 @@ export const updateEmailAccount = asyncHandler(
     const { id } = req.params;
     const updates: UpdateEmailAccountInput = req.body;
 
-    const emailAccount = await EmailAccount.findById(id);
+    const emailAccount = await emailAccountService.findById(id);
 
     if (!emailAccount) {
       throw new NotFoundError('Email account not found');
@@ -117,19 +122,21 @@ export const updateEmailAccount = asyncHandler(
 
     // Check if email is being changed and if it already exists
     if (updates.email && updates.email !== emailAccount.email) {
-      const existingAccount = await EmailAccount.findOne({ email: updates.email });
+      const allAccounts = await emailAccountService.find([]);
+      const existingAccount = allAccounts.find((acc: any) => acc.email === updates.email);
       if (existingAccount) {
         throw new CustomValidationError('Email account already exists');
       }
     }
 
     // Update fields
-    Object.assign(emailAccount, updates);
-    await emailAccount.save();
+    await emailAccountService.update(id, updates as any);
 
-    logger.info(`Email account updated: ${emailAccount.email} by user ${req.userId}`);
+    const updatedAccount = await emailAccountService.findById(id);
 
-    successResponse(res, emailAccount, 'Email account updated successfully');
+    logger.info(`Email account updated: ${updatedAccount?.email} by user ${req.userId}`);
+
+    successResponse(res, updatedAccount, 'Email account updated successfully');
   }
 );
 
@@ -140,13 +147,13 @@ export const deleteEmailAccount = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const emailAccount = await EmailAccount.findById(id);
+    const emailAccount = await emailAccountService.findById(id);
 
     if (!emailAccount) {
       throw new NotFoundError('Email account not found');
     }
 
-    await emailAccount.deleteOne();
+    await emailAccountService.delete(id);
 
     logger.info(`Email account deleted: ${emailAccount.email} by user ${req.userId}`);
 
@@ -161,22 +168,21 @@ export const testEmailAccountConnection = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const emailAccount = await EmailAccount.findById(id);
+    const emailAccount = await emailAccountService.findById(id);
 
     if (!emailAccount) {
       throw new NotFoundError('Email account not found');
     }
 
     // Test IMAP connection
-    const isConnected = await imapService.testConnection(emailAccount);
+    const isConnected = await imapService.testConnection(emailAccount as any);
 
     if (!isConnected) {
       throw new CustomValidationError('Failed to connect to email account. Please check credentials.');
     }
 
     // Update last checked timestamp
-    emailAccount.lastChecked = new Date();
-    await emailAccount.save();
+    await emailAccountService.update(id, { lastChecked: new Date() } as any);
 
     logger.info(`Email account connection tested: ${emailAccount.email}`);
 

@@ -1,11 +1,10 @@
 import { Request, Response } from 'express';
-import { Pipeline } from '../models';
+import { pipelineService, jobService } from '../services/firestore';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
-import { NotFoundError, ValidationError as CustomValidationError } from '../utils/errors';
+import { NotFoundError, ValidationError as CustomValidationError, BadRequestError } from '../utils/errors';
 import logger from '../utils/logger';
 import {
   CreatePipelineInput,
-  UpdatePipelineInput,
   ListPipelinesQuery,
 } from '../types/pipeline.types';
 
@@ -17,7 +16,8 @@ export const createPipeline = asyncHandler(
     const data: CreatePipelineInput = req.body;
 
     // Check for duplicate pipeline name
-    const existingPipeline = await Pipeline.findOne({ name: data.name });
+    const allPipelines = await pipelineService.find([]);
+    const existingPipeline = allPipelines.find((p: any) => p.name === data.name);
 
     if (existingPipeline) {
       throw new CustomValidationError(
@@ -27,16 +27,22 @@ export const createPipeline = asyncHandler(
 
     // If this is set as default, unset other defaults
     if (data.isDefault) {
-      await Pipeline.updateMany({}, { isDefault: false });
+      await Promise.all(
+        allPipelines.map((p: any) =>
+          pipelineService.update(p.id, { isDefault: false } as any)
+        )
+      );
     }
 
     // Create pipeline
-    const pipeline = await Pipeline.create({
+    const pipelineId = await pipelineService.create({
       ...data,
-      createdBy: req.user?._id,
-    });
+      createdBy: req.user?.id,
+    } as any);
 
-    logger.info(`Pipeline created: ${pipeline.name} by user ${req.user?._id}`);
+    const pipeline = await pipelineService.findById(pipelineId);
+
+    logger.info(`Pipeline created: ${pipeline?.name} by user ${req.user?.id}`);
 
     successResponse(res, pipeline, 'Pipeline created successfully', 201);
   }
@@ -55,18 +61,20 @@ export const getPipelines = asyncHandler(
       sortOrder = 'desc',
     } = req.query as any as ListPipelinesQuery;
 
-    // Build filter
-    const filter: any = {};
+    // Get all pipelines
+    let allPipelines = await pipelineService.find([]);
 
+    // Apply search filter
     if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-      ];
+      const searchLower = search.toLowerCase();
+      allPipelines = allPipelines.filter((pipeline: any) =>
+        pipeline.name?.toLowerCase().includes(searchLower) ||
+        pipeline.description?.toLowerCase().includes(searchLower)
+      );
     }
 
-    // Get total count
-    const totalCount = await Pipeline.countDocuments(filter);
+    // Get total count after filtering
+    const totalCount = allPipelines.length;
 
     // Calculate pagination
     const pagination = paginateResults(totalCount, {
@@ -76,18 +84,18 @@ export const getPipelines = asyncHandler(
       order: sortOrder,
     });
 
-    // Calculate skip
+    // Apply sorting
+    allPipelines.sort((a: any, b: any) => {
+      const aVal = a[sortBy];
+      const bVal = b[sortBy];
+      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    // Apply pagination
     const skip = (page - 1) * limit;
-
-    // Build sort object
-    const sort: any = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
-
-    // Fetch data
-    const pipelines = await Pipeline.find(filter)
-      .sort(sort)
-      .skip(skip)
-      .limit(limit);
+    const pipelines = allPipelines.slice(skip, skip + limit);
 
     successResponse(
       res,
@@ -107,21 +115,20 @@ export const getPipelineById = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const pipeline = await Pipeline.findById(id)
-      .populate('createdBy', 'firstName lastName email');
+    const pipeline = await pipelineService.findById(id);
 
     if (!pipeline) {
       throw new NotFoundError('Pipeline not found');
     }
 
     // Get job count using this pipeline
-    const Job = require('../models').Job;
-    const jobCount = await Job.countDocuments({ pipelineId: id });
+    const allJobs = await jobService.find([]);
+    const jobCount = allJobs.filter((job: any) => job.pipelineId === id).length;
 
     successResponse(
       res,
       {
-        ...pipeline.toJSON(),
+        ...pipeline,
         jobCount,
       },
       'Pipeline retrieved successfully'
@@ -135,84 +142,65 @@ export const getPipelineById = asyncHandler(
 export const updatePipeline = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
-    const updates: UpdatePipelineInput = req.body;
+    const data: any = req.body;
 
-    const pipeline = await Pipeline.findById(id);
+    const pipeline = await pipelineService.findById(id);
 
     if (!pipeline) {
       throw new NotFoundError('Pipeline not found');
     }
 
-    // Check if name is being changed and if it creates a duplicate
-    if (updates.name && updates.name !== pipeline.name) {
-      const existingPipeline = await Pipeline.findOne({
-        name: updates.name,
-        _id: { $ne: id },
-      });
+    // Check for duplicate name if name is being updated
+    if (data.name && data.name !== pipeline.name) {
+      const allPipelines = await pipelineService.find([]);
+      const existingPipeline = allPipelines.find(
+        (p: any) => p.name === data.name && p.id !== id
+      );
 
       if (existingPipeline) {
-        throw new CustomValidationError(
-          `Pipeline already exists with name: ${updates.name}`
-        );
+        throw new BadRequestError('Pipeline with this name already exists');
       }
     }
 
-    // If this is being set as default, unset other defaults
-    if (updates.isDefault) {
-      await Pipeline.updateMany({ _id: { $ne: id } }, { isDefault: false });
+    // If setting as default, unset other defaults
+    if (data.isDefault) {
+      const allPipelines = await pipelineService.find([]);
+      await Promise.all(
+        allPipelines
+          .filter((p: any) => p.id !== id)
+          .map((p: any) =>
+            pipelineService.update(p.id, { isDefault: false } as any)
+          )
+      );
     }
 
-    // Handle stages update specially to preserve existing stage IDs
-    if (updates.stages && Array.isArray(updates.stages)) {
-      const existingStages = pipeline.stages;
-      const updatedStages = updates.stages.map((newStage: any, index: number) => {
-        // If the stage has an _id, try to find and update the existing stage
-        if (newStage._id) {
-          const existingStage = existingStages.find((s: any) => 
-            s._id.toString() === newStage._id.toString()
-          );
-          if (existingStage) {
-            // Preserve the existing _id and update other fields
-            return {
-              _id: existingStage._id,
-              name: newStage.name,
-              description: newStage.description,
-              order: newStage.order !== undefined ? newStage.order : index,
-              color: newStage.color,
-              isActive: newStage.isActive !== undefined ? newStage.isActive : true,
-            };
-          }
-        }
-        // For stages without _id or not found, check if we can match by order/index
-        const existingStageByOrder = existingStages[index];
-        if (existingStageByOrder) {
-          // Preserve existing stage ID when updating by position
-          return {
-            _id: existingStageByOrder._id,
-            name: newStage.name,
-            description: newStage.description,
-            order: newStage.order !== undefined ? newStage.order : index,
-            color: newStage.color,
-            isActive: newStage.isActive !== undefined ? newStage.isActive : true,
-          };
-        }
-        // New stage without matching existing one
-        return newStage;
+    // Handle stages update with proper _id preservation
+    if (data.stages) {
+      const updatedStages = data.stages.map((stage: any, index: number) => {
+        const existingStage: any = pipeline.stages?.[index];
+
+        return {
+          ...stage,
+          // Preserve existing _id if the stage already exists
+          _id: existingStage?._id || stage._id || undefined,
+        };
       });
-      
-      // Remove stages from updates and update manually
-      delete updates.stages;
-      pipeline.stages = updatedStages as any;
+
+      data.stages = updatedStages;
     }
 
-    // Update other fields
-    Object.assign(pipeline, updates);
-    pipeline.updatedBy = req.user?._id as any;
-    await pipeline.save();
+    // Update pipeline
+    const updateData: any = {
+      ...data,
+      updatedBy: req.user?.id,
+      updatedAt: new Date(),
+    };
 
-    logger.info(`Pipeline updated: ${pipeline.name}`);
+    await pipelineService.update(id, updateData);
 
-    successResponse(res, pipeline, 'Pipeline updated successfully');
+    const updatedPipeline = await pipelineService.findById(id);
+
+    successResponse(res, updatedPipeline, 'Pipeline updated successfully');
   }
 );
 
@@ -223,7 +211,7 @@ export const deletePipeline = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const pipeline = await Pipeline.findById(id);
+    const pipeline = await pipelineService.findById(id);
 
     if (!pipeline) {
       throw new NotFoundError('Pipeline not found');
@@ -237,8 +225,8 @@ export const deletePipeline = asyncHandler(
     }
 
     // Check if there are jobs using this pipeline
-    const Job = require('../models').Job;
-    const jobCount = await Job.countDocuments({ pipelineId: id });
+    const allJobs = await jobService.find([]);
+    const jobCount = allJobs.filter((job: any) => job.pipelineId === id).length;
 
     if (jobCount > 0) {
       throw new CustomValidationError(
@@ -246,7 +234,7 @@ export const deletePipeline = asyncHandler(
       );
     }
 
-    await pipeline.deleteOne();
+    await pipelineService.delete(id);
 
     logger.info(`Pipeline deleted: ${pipeline.name}`);
 
@@ -259,7 +247,8 @@ export const deletePipeline = asyncHandler(
  */
 export const getDefaultPipeline = asyncHandler(
   async (_req: Request, res: Response): Promise<void> => {
-    const pipeline = await Pipeline.findOne({ isDefault: true });
+    const allPipelines = await pipelineService.find([]);
+    const pipeline = allPipelines.find((p: any) => p.isDefault === true);
 
     if (!pipeline) {
       throw new NotFoundError('No default pipeline found');

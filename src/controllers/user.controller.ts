@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import { User, Candidate, TeamMember } from '../models';
+import { userService, candidateService, teamMemberService } from '../services/firestore';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
 import { NotFoundError, BadRequestError } from '../utils/errors';
 import logger from '../utils/logger';
@@ -21,25 +20,30 @@ export const getUsers = asyncHandler(
       sortOrder = 'desc',
     } = req.query as any;
 
-    // Build filter
-    const filter: any = {};
-    if (role) filter.role = role;
-    
-    // Filter by active status if provided
+    // Get all users
+    let allUsers = await userService.find([]);
+
+    // Apply filters
+    if (role) {
+      allUsers = allUsers.filter((user: any) => user.role === role);
+    }
+
     if (isActive !== undefined) {
-      filter.isActive = isActive === 'true';
+      const activeFilter = isActive === 'true';
+      allUsers = allUsers.filter((user: any) => user.isActive === activeFilter);
     }
 
     if (search) {
-      filter.$or = [
-        { firstName: { $regex: search, $options: 'i' } },
-        { lastName: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-      ];
+      const searchLower = search.toLowerCase();
+      allUsers = allUsers.filter((user: any) =>
+        user.firstName?.toLowerCase().includes(searchLower) ||
+        user.lastName?.toLowerCase().includes(searchLower) ||
+        user.email?.toLowerCase().includes(searchLower)
+      );
     }
 
-    // Get total count
-    const totalCount = await User.countDocuments(filter);
+    // Get total count after filtering
+    const totalCount = allUsers.length;
 
     // Calculate pagination
     const pagination = paginateResults(totalCount, {
@@ -49,20 +53,18 @@ export const getUsers = asyncHandler(
       order: sortOrder,
     });
 
-    // Calculate skip
+    // Apply sorting
+    allUsers.sort((a: any, b: any) => {
+      const aVal = a[sortBy];
+      const bVal = b[sortBy];
+      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    // Apply pagination
     const skip = (page - 1) * limit;
-
-    // Build sort object
-    const sort: any = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
-
-    // Fetch data
-    const users = await User.find(filter)
-      .sort(sort)
-      .skip(skip)
-      .limit(limit)
-      .select('-__v')
-      .lean(); // Use lean for better performance
+    const users = allUsers.slice(skip, skip + limit);
 
     successResponse(
       res,
@@ -87,12 +89,12 @@ export const getUserById = asyncHandler(
       throw new BadRequestError('User ID is required');
     }
 
-    // Validate ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    // Validate ID format (string validation for Firestore)
+    if (typeof id !== 'string' || id.length === 0) {
       throw new BadRequestError('Invalid User ID format');
     }
 
-    const user = await User.findById(id).select('-__v');
+    const user = await userService.findById(id);
 
     if (!user) {
       throw new NotFoundError('User not found');
@@ -128,8 +130,8 @@ export const updateUser = asyncHandler(
       throw new BadRequestError('User ID is required');
     }
 
-    // Validate ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    // Validate ID format (string validation for Firestore)
+    if (typeof id !== 'string' || id.length === 0) {
       throw new BadRequestError('Invalid User ID format');
     }
 
@@ -152,11 +154,8 @@ export const updateUser = asyncHandler(
       };
     }
 
-    const user = await User.findByIdAndUpdate(
-      id,
-      { ...updates },
-      { new: true, runValidators: true }
-    ).select('-__v');
+    await userService.update(id, updates as any);
+    const user = await userService.findById(id);
 
     if (!user) {
       throw new NotFoundError('User not found');
@@ -211,41 +210,46 @@ export const deleteUser = asyncHandler(
       throw new BadRequestError('User ID is required');
     }
 
-    // Validate ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    // Validate ID format (string validation for Firestore)
+    if (typeof id !== 'string' || id.length === 0) {
       throw new BadRequestError('Invalid User ID format');
     }
 
-    const user = await User.findById(id);
+    const user = await userService.findById(id);
 
     if (!user) {
       throw new NotFoundError('User not found');
     }
 
     // Check if user has any active candidates assigned
-    const activeCandidatesCount = await Candidate.countDocuments({
-      assignedTo: id,
-      status: { $nin: ['rejected', 'withdrawn'] } // Not rejected or withdrawn
-    });
+    const allCandidates = await candidateService.find([]);
+    const activeCandidates = allCandidates.filter((candidate: any) =>
+      candidate.assignedTo === id &&
+      !['rejected', 'withdrawn'].includes(candidate.status)
+    );
 
-    if (activeCandidatesCount > 0) {
+    if (activeCandidates.length > 0) {
       throw new BadRequestError(
-        `Cannot delete user. This user has ${activeCandidatesCount} active candidate(s) assigned. Please reassign or close these candidates first.`
+        `Cannot delete user. This user has ${activeCandidates.length} active candidate(s) assigned. Please reassign or close these candidates first.`
       );
     }
 
     // Count team member assignments before deletion for logging
-    const teamAssignmentsCount = await TeamMember.countDocuments({ userId: id });
+    const allTeamMembers = await teamMemberService.find([]);
+    const userTeamMembers = allTeamMembers.filter((tm: any) => tm.userId === id);
+    const teamAssignmentsCount = userTeamMembers.length;
     
     // Delete all team member assignments for this user
-    await TeamMember.deleteMany({ userId: id });
+    await Promise.all(
+      userTeamMembers.map((tm: any) => teamMemberService.delete(tm.id))
+    );
 
     // Permanently delete the user
-    await User.findByIdAndDelete(id);
+    await userService.delete(id);
 
     logger.info(`User permanently deleted: ${user.email} (removed ${teamAssignmentsCount} team assignment(s)) by ${req.user?.email}`);
 
-    successResponse(res, { id: user._id, deleted: true }, 'User deleted successfully');
+    successResponse(res, { id: user.id, deleted: true }, 'User deleted successfully');
   }
 );
 
@@ -254,20 +258,17 @@ export const deleteUser = asyncHandler(
  */
 export const getUserStats = asyncHandler(
   async (_req: Request, res: Response): Promise<void> => {
-    const stats = await User.aggregate([
-      {
-        $group: {
-          _id: '$role',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+    // Get all users
+    const allUsers = await userService.find([]);
 
-    const totalUsers = await User.countDocuments();
-    const activeUsers = await User.countDocuments({ isActive: true });
+    // Calculate total and active users
+    const totalUsers = allUsers.length;
+    const activeUsers = allUsers.filter((user: any) => user.isActive).length;
 
-    const roleBreakdown = stats.reduce((acc: any, stat: any) => {
-      acc[stat._id] = stat.count;
+    // Group by role
+    const roleBreakdown = allUsers.reduce((acc: any, user: any) => {
+      const role = user.role || 'user';
+      acc[role] = (acc[role] || 0) + 1;
       return acc;
     }, {});
 

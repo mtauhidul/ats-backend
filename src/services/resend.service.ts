@@ -1,9 +1,8 @@
-import { Resend } from 'resend';
-import { config } from '../config';
-import logger from '../utils/logger';
-import { Email } from '../models';
-import { InternalServerError } from '../utils/errors';
-import mongoose from 'mongoose';
+import { Resend } from "resend";
+import { config } from "../config";
+import { InternalServerError } from "../utils/errors";
+import logger from "../utils/logger";
+import { emailService } from "./firestore";
 
 const resend = new Resend(config.resend.apiKey);
 
@@ -19,7 +18,7 @@ export interface SendEmailOptions {
     content: Buffer | string;
     contentType?: string;
   }>;
-  
+
   // For tracking in database
   candidateId?: string;
   applicationId?: string;
@@ -33,7 +32,9 @@ class ResendService {
   /**
    * Send email via Resend
    */
-  async sendEmail(options: SendEmailOptions): Promise<{ id: string; emailId: string }> {
+  async sendEmail(
+    options: SendEmailOptions
+  ): Promise<{ id: string; emailId: string }> {
     try {
       const {
         to,
@@ -60,19 +61,19 @@ class ResendService {
         html: bodyHtml || this.textToHtml(body),
         cc,
         bcc,
-        attachments: attachments?.map(att => ({
+        attachments: attachments?.map((att) => ({
           filename: att.filename,
           content: att.content,
         })),
       });
 
       if (!result.data?.id) {
-        throw new Error('Failed to send email via Resend');
+        throw new Error("Failed to send email via Resend");
       }
 
       // Save to database
-      const email = await Email.create({
-        direction: 'outbound',
+      const emailId = await emailService.create({
+        direction: "outbound",
         from: config.resend.fromEmail,
         to: Array.isArray(to) ? to : [to],
         cc,
@@ -80,44 +81,48 @@ class ResendService {
         subject,
         body,
         bodyHtml: bodyHtml || this.textToHtml(body),
-        status: 'sent',
+        status: "sent",
         sentAt: new Date(),
-        candidateId: candidateId ? new mongoose.Types.ObjectId(candidateId) : undefined,
-        applicationId: applicationId ? new mongoose.Types.ObjectId(applicationId) : undefined,
-        jobId: jobId ? new mongoose.Types.ObjectId(jobId) : undefined,
-        clientId: clientId ? new mongoose.Types.ObjectId(clientId) : undefined,
-        interviewId: interviewId ? new mongoose.Types.ObjectId(interviewId) : undefined,
-        sentBy: sentBy ? new mongoose.Types.ObjectId(sentBy) : undefined,
+        candidateId: candidateId || undefined,
+        applicationId: applicationId || undefined,
+        jobId: jobId || undefined,
+        clientId: clientId || undefined,
+        interviewId: interviewId || undefined,
+        sentBy: sentBy || undefined,
         messageId: result.data.id,
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
 
       logger.info(`Email sent successfully: ${result.data.id}`);
 
       return {
         id: result.data.id,
-        emailId: (email._id as any).toString(),
+        emailId,
       };
     } catch (error: any) {
-      logger.error('Resend service error:', error);
+      logger.error("Resend service error:", error);
 
       // Save failed email to database
       try {
-        await Email.create({
-          direction: 'outbound',
+        await emailService.create({
+          direction: "outbound",
           from: config.resend.fromEmail,
           to: Array.isArray(options.to) ? options.to : [options.to],
           subject: options.subject,
           body: options.body,
-          status: 'failed',
+          status: "failed",
           error: error.message,
-          candidateId: options.candidateId ? new mongoose.Types.ObjectId(options.candidateId) : undefined,
-          applicationId: options.applicationId ? new mongoose.Types.ObjectId(options.applicationId) : undefined,
-          jobId: options.jobId ? new mongoose.Types.ObjectId(options.jobId) : undefined,
-          clientId: options.clientId ? new mongoose.Types.ObjectId(options.clientId) : undefined,
-          sentBy: options.sentBy ? new mongoose.Types.ObjectId(options.sentBy) : undefined,
+          candidateId: options.candidateId || undefined,
+          applicationId: options.applicationId || undefined,
+          jobId: options.jobId || undefined,
+          clientId: options.clientId || undefined,
+          sentBy: options.sentBy || undefined,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         });
       } catch (dbError) {
-        logger.error('Failed to save failed email to database:', dbError);
+        logger.error("Failed to save failed email to database:", dbError);
       }
 
       throw new InternalServerError(`Failed to send email: ${error.message}`);
@@ -171,12 +176,13 @@ ${config.resend.fromName}
     options: { interviewId?: string; candidateId?: string; jobId?: string }
   ): Promise<{ id: string; emailId: string }> {
     const subject = `Interview Invitation: ${jobTitle}`;
-    
-    const locationInfo = interviewDetails.type === 'video' && interviewDetails.meetingLink
-      ? `Meeting Link: ${interviewDetails.meetingLink}`
-      : interviewDetails.location
-      ? `Location: ${interviewDetails.location}`
-      : '';
+
+    const locationInfo =
+      interviewDetails.type === "video" && interviewDetails.meetingLink
+        ? `Meeting Link: ${interviewDetails.meetingLink}`
+        : interviewDetails.location
+          ? `Location: ${interviewDetails.location}`
+          : "";
 
     const body = `
 Dear ${candidateName},
@@ -210,9 +216,9 @@ ${config.resend.fromName}
    */
   private textToHtml(text: string): string {
     return text
-      .split('\n\n')
-      .map(paragraph => `<p>${paragraph.replace(/\n/g, '<br>')}</p>`)
-      .join('\n');
+      .split("\n\n")
+      .map((paragraph) => `<p>${paragraph.replace(/\n/g, "<br>")}</p>`)
+      .join("\n");
   }
 }
 

@@ -109,7 +109,13 @@ export const getEmailById = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const email = await emailService.findById(id);
+    const email = await Email.findById(id)
+      .populate("candidateId", "firstName lastName email phone")
+      .populate("applicationId", "firstName lastName resumeUrl")
+      .populate("jobId", "title description")
+      .populate("clientId", "companyName")
+      .populate("interviewId", "title scheduledAt type")
+      .populate("sentBy", "firstName lastName email avatar");
 
     if (!email) {
       throw new NotFoundError("Email not found");
@@ -155,7 +161,11 @@ export const sendEmail = asyncHandler(
     });
 
     // Fetch the created email record with populated references
-    const email = await emailService.findById(result.emailId);
+    const email = await Email.findById(result.emailId).populate([
+      { path: "candidateId", select: "firstName lastName email" },
+      { path: "jobId", select: "title" },
+      { path: "sentBy", select: "firstName lastName email" },
+    ]);
 
     logger.info(
       `Email sent via Resend: ${result.id} to ${Array.isArray(to) ? to.join(", ") : to}`
@@ -172,14 +182,18 @@ export const createDraft = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const data = req.body;
 
-    const emailId = await emailService.create({
+    const email = await Email.create({
       ...data,
       direction: "outbound",
       status: "draft",
       sentBy: req.user?.id,
-    } as any);
+    });
 
-    const email = await emailService.findById(emailId);
+    await email.populate([
+      { path: "candidateId", select: "firstName lastName email" },
+      { path: "jobId", select: "title" },
+      { path: "sentBy", select: "firstName lastName email" },
+    ]);
 
     logger.info(`Email draft created by ${req.user?.email}`);
 
@@ -195,19 +209,24 @@ export const updateDraft = asyncHandler(
     const { id } = req.params;
     const updates = req.body;
 
-    const allEmails = await emailService.find([]);
-    const email = allEmails.find((e: any) => e.id === id && e.status === "draft");
+    const email = await Email.findOne({ _id: id, status: "draft" });
 
     if (!email) {
       throw new NotFoundError("Draft not found");
     }
 
-    await emailService.update(id, updates);
-    const updatedEmail = await emailService.findById(id);
+    Object.assign(email, updates);
+    await email.save();
+
+    await email.populate([
+      { path: "candidateId", select: "firstName lastName email" },
+      { path: "jobId", select: "title" },
+      { path: "sentBy", select: "firstName lastName email" },
+    ]);
 
     logger.info(`Email draft updated: ${id} by ${req.user?.email}`);
 
-    successResponse(res, updatedEmail, "Draft updated successfully");
+    successResponse(res, email, "Draft updated successfully");
   }
 );
 
@@ -218,25 +237,27 @@ export const sendDraft = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const allEmails = await emailService.find([]);
-    const email = allEmails.find((e: any) => e.id === id && e.status === "draft");
+    const email = await Email.findOne({ _id: id, status: "draft" });
 
     if (!email) {
       throw new NotFoundError("Draft not found");
     }
 
-    await emailService.update(id, {
-      status: "sent",
-      sentAt: new Date(),
-    });
+    email.status = "sent";
+    email.sentAt = new Date();
+    await email.save();
 
     // TODO: Integrate with email service (Resend) to actually send the email
 
-    const updatedEmail = await emailService.findById(id);
+    await email.populate([
+      { path: "candidateId", select: "firstName lastName email" },
+      { path: "jobId", select: "title" },
+      { path: "sentBy", select: "firstName lastName email" },
+    ]);
 
     logger.info(`Email draft sent: ${id} by ${req.user?.email}`);
 
-    successResponse(res, updatedEmail, "Email sent successfully");
+    successResponse(res, email, "Email sent successfully");
   }
 );
 
@@ -247,7 +268,7 @@ export const deleteEmail = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const email = await emailService.findById(id);
+    const email = await Email.findById(id);
 
     if (!email) {
       throw new NotFoundError("Email not found");
@@ -255,11 +276,11 @@ export const deleteEmail = asyncHandler(
 
     // Hard delete drafts, soft delete (mark as deleted) for sent emails
     if (email.status === "draft") {
-      await emailService.delete(id);
+      await Email.findByIdAndDelete(id);
     } else {
       // For sent emails, we might want to keep the record
       // Implement soft delete or archive logic here if needed
-      await emailService.delete(id);
+      await Email.findByIdAndDelete(id);
     }
 
     logger.info(`Email deleted: ${id} by ${req.user?.email}`);
@@ -275,10 +296,10 @@ export const getEmailThread = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { threadId } = req.params;
 
-    const allEmails = await emailService.find([]);
-    const emails = allEmails
-      .filter((e: any) => e.threadId === threadId)
-      .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const emails = await Email.find({ threadId })
+      .populate("candidateId", "firstName lastName email")
+      .populate("sentBy", "firstName lastName email avatar")
+      .sort({ createdAt: 1 });
 
     successResponse(res, emails, "Email thread retrieved successfully");
   }
@@ -291,11 +312,11 @@ export const getCandidateEmails = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { candidateId } = req.params;
 
-    const allEmails = await emailService.find([]);
-    const emails = allEmails
-      .filter((e: any) => e.candidateId === candidateId)
-      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 50);
+    const emails = await Email.find({ candidateId })
+      .populate("jobId", "title")
+      .populate("sentBy", "firstName lastName email avatar")
+      .sort({ createdAt: -1 })
+      .limit(50);
 
     successResponse(res, emails, "Candidate emails retrieved successfully");
   }
@@ -315,44 +336,32 @@ export const getInboundEmails = asyncHandler(
       search,
     } = req.query as any;
 
-    // Fetch all emails
-    const allEmails = await emailService.find([]);
+    // Build filter for inbound emails
+    const filter: any = { direction: "inbound" };
 
-    // Apply filters in memory
-    let filtered = allEmails.filter((email: any) => {
-      // Direction filter
-      if (email.direction !== "inbound") return false;
+    if (candidateId) {
+      filter.candidateId = candidateId;
+    }
 
-      // Candidate filter
-      if (candidateId && email.candidateId !== candidateId) return false;
+    if (status) {
+      filter.status = status;
+    }
 
-      // Status filter
-      if (status && email.status !== status) return false;
+    // Filter for unmatched emails (emails from unknown senders)
+    if (unmatched === "true") {
+      filter.candidateId = { $exists: false };
+    }
 
-      // Unmatched filter (emails without candidateId)
-      if (unmatched === "true" && email.candidateId) return false;
+    if (search) {
+      filter.$or = [
+        { from: { $regex: search, $options: "i" } },
+        { subject: { $regex: search, $options: "i" } },
+        { body: { $regex: search, $options: "i" } },
+      ];
+    }
 
-      // Search filter (case-insensitive)
-      if (search) {
-        const searchLower = search.toLowerCase();
-        const matchesFrom = email.from?.toLowerCase().includes(searchLower);
-        const matchesSubject = email.subject?.toLowerCase().includes(searchLower);
-        const matchesBody = email.body?.toLowerCase().includes(searchLower);
-        if (!matchesFrom && !matchesSubject && !matchesBody) return false;
-      }
-
-      return true;
-    });
-
-    // Sort by receivedAt descending
-    filtered = filtered.sort((a: any, b: any) => {
-      const dateA = a.receivedAt ? new Date(a.receivedAt).getTime() : 0;
-      const dateB = b.receivedAt ? new Date(b.receivedAt).getTime() : 0;
-      return dateB - dateA;
-    });
-
-    // Get total count after filtering
-    const totalCount = filtered.length;
+    // Get total count
+    const totalCount = await Email.countDocuments(filter);
 
     // Calculate pagination
     const pagination = paginateResults(totalCount, {
@@ -362,9 +371,18 @@ export const getInboundEmails = asyncHandler(
       order: "desc",
     });
 
-    // Apply pagination
+    // Calculate skip
     const skip = (page - 1) * limit;
-    const emails = filtered.slice(skip, skip + limit);
+
+    // Fetch inbound emails
+    const emails = await Email.find(filter)
+      .populate("candidateId", "firstName lastName email phone")
+      .populate("applicationId", "status")
+      .populate("jobId", "title")
+      .populate("interviewId", "scheduledAt type")
+      .sort({ receivedAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     successResponse(
       res,
@@ -382,20 +400,22 @@ export const getInboundEmails = asyncHandler(
  */
 export const getEmailStats = asyncHandler(
   async (_req: Request, res: Response): Promise<void> => {
-    const allEmails = await emailService.find([]);
-    
-    const totalEmails = allEmails.length;
-    const sentEmails = allEmails.filter(
-      (e: any) => e.direction === "outbound" && e.status === "sent"
-    ).length;
-    const receivedEmails = allEmails.filter(
-      (e: any) => e.direction === "inbound" && e.status === "received"
-    ).length;
-    const unmatchedEmails = allEmails.filter(
-      (e: any) => e.direction === "inbound" && e.status === "received" && !e.candidateId
-    ).length;
-    const draftEmails = allEmails.filter((e: any) => e.status === "draft").length;
-    const failedEmails = allEmails.filter((e: any) => e.status === "failed").length;
+    const totalEmails = await Email.countDocuments();
+    const sentEmails = await Email.countDocuments({
+      direction: "outbound",
+      status: "sent",
+    });
+    const receivedEmails = await Email.countDocuments({
+      direction: "inbound",
+      status: "received",
+    });
+    const unmatchedEmails = await Email.countDocuments({
+      direction: "inbound",
+      status: "received",
+      candidateId: { $exists: false },
+    });
+    const draftEmails = await Email.countDocuments({ status: "draft" });
+    const failedEmails = await Email.countDocuments({ status: "failed" });
 
     successResponse(
       res,

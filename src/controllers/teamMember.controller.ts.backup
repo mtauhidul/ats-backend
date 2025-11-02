@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
-import { teamMemberService, userService, jobService } from '../services/firestore';
+import mongoose from 'mongoose';
+import { TeamMember, User, Job } from '../models';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
 import { NotFoundError, BadRequestError } from '../utils/errors';
 import logger from '../utils/logger';
@@ -21,31 +22,15 @@ export const getTeamMembers = asyncHandler(
       sortOrder = 'desc',
     } = req.query as any;
 
-    // Fetch all team members
-    const allTeamMembers = await teamMemberService.find([]);
+    // Build filter
+    const filter: any = {};
+    if (jobId) filter.jobId = jobId;
+    if (userId) filter.userId = userId;
+    if (role) filter.role = role;
+    if (isActive !== undefined) filter.isActive = isActive === 'true';
 
-    // Apply filters in memory
-    let filtered = allTeamMembers.filter((tm: any) => {
-      if (jobId && tm.jobId !== jobId) return false;
-      if (userId && tm.userId !== userId) return false;
-      if (role && tm.role !== role) return false;
-      if (isActive !== undefined && tm.isActive !== (isActive === 'true')) return false;
-      return true;
-    });
-
-    // Sort
-    filtered = filtered.sort((a: any, b: any) => {
-      const aVal = a[sortBy];
-      const bVal = b[sortBy];
-      if (sortOrder === 'asc') {
-        return aVal > bVal ? 1 : -1;
-      } else {
-        return aVal < bVal ? 1 : -1;
-      }
-    });
-
-    // Get total count after filtering
-    const totalCount = filtered.length;
+    // Get total count
+    const totalCount = await TeamMember.countDocuments(filter);
 
     // Calculate pagination
     const pagination = paginateResults(totalCount, {
@@ -55,9 +40,21 @@ export const getTeamMembers = asyncHandler(
       order: sortOrder,
     });
 
-    // Apply pagination
+    // Calculate skip
     const skip = (page - 1) * limit;
-    const teamMembers = filtered.slice(skip, skip + limit);
+
+    // Build sort object
+    const sort: any = {};
+    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+
+    // Fetch data
+    const teamMembers = await TeamMember.find(filter)
+      .populate('userId', 'firstName lastName email avatar role phone title department permissions')
+      .populate('jobId', 'title clientId')
+      .populate('addedBy', 'firstName lastName email')
+      .sort(sort)
+      .skip(skip)
+      .limit(limit);
 
     successResponse(
       res,
@@ -77,7 +74,10 @@ export const getTeamMemberById = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const teamMember = await teamMemberService.findById(id);
+    const teamMember = await TeamMember.findById(id)
+      .populate('userId', 'firstName lastName email avatar role phone title department permissions')
+      .populate('jobId', 'title clientId location')
+      .populate('addedBy', 'firstName lastName email');
 
     if (!teamMember) {
       throw new NotFoundError('Team member not found');
@@ -99,9 +99,20 @@ export const createTeamMember = asyncHandler(
 
     // Case 1: Creating team member with existing userId and jobId (team member for a specific job)
     if (data.userId && data.jobId) {
+      // Validate ObjectId format
+      if (!mongoose.Types.ObjectId.isValid(data.userId)) {
+        logger.error(`Invalid userId format: ${data.userId}`);
+        throw new BadRequestError('Invalid User ID format');
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(data.jobId)) {
+        logger.error(`Invalid jobId format: ${data.jobId}`);
+        throw new BadRequestError('Invalid Job ID format');
+      }
+
       // Verify user exists
       logger.info(`Looking up user with ID: ${data.userId}`);
-      const user = await userService.findById(data.userId);
+      const user = await User.findById(data.userId);
       if (!user) {
         logger.error(`User not found with ID: ${data.userId}`);
         throw new NotFoundError('User');
@@ -109,17 +120,18 @@ export const createTeamMember = asyncHandler(
 
       // Verify job exists
       logger.info(`Looking up job with ID: ${data.jobId}`);
-      const job = await jobService.findById(data.jobId);
+      const job = await Job.findById(data.jobId);
       if (!job) {
         logger.error(`Job not found with ID: ${data.jobId}`);
         throw new NotFoundError('Job');
       }
 
       // Check if team member already exists
-      const allTeamMembers = await teamMemberService.find([]);
-      const existingTeamMember = allTeamMembers.find((tm: any) =>
-        tm.userId === data.userId && tm.jobId === data.jobId && tm.isActive === true
-      );
+      const existingTeamMember = await TeamMember.findOne({
+        userId: data.userId,
+        jobId: data.jobId,
+        isActive: true,
+      });
 
       if (existingTeamMember) {
         logger.warn(`Team member already exists: user ${data.userId} on job ${data.jobId}`);
@@ -139,13 +151,12 @@ export const createTeamMember = asyncHandler(
 
       // Check if user with email already exists
       logger.info(`Looking up user by email: ${data.email}`);
-      const allUsers = await userService.find([]);
-      let user = allUsers.find((u: any) => u.email?.toLowerCase() === data.email.toLowerCase());
+      let user = await User.findOne({ email: data.email.toLowerCase() });
 
       if (!user) {
         // Create new user
         logger.info(`Creating new user with email: ${data.email}`);
-        const newUserId = await userService.create({
+        user = await User.create({
           email: data.email.toLowerCase(),
           firstName: data.firstName,
           lastName: data.lastName,
@@ -155,15 +166,10 @@ export const createTeamMember = asyncHandler(
           title: data.title,
           department: data.department,
           isActive: data.status === 'active' || data.status === undefined,
-        } as any);
-        const createdUser = await userService.findById(newUserId);
-        if (!createdUser) {
-          throw new Error('Failed to create user');
-        }
-        user = createdUser;
-        logger.info(`New user created: ${user.email} with ID: ${user.id}`);
+        });
+        logger.info(`New user created: ${user.email} with ID: ${user._id}`);
       } else {
-        logger.info(`User already exists with email: ${data.email}, using existing user ID: ${user.id}`);
+        logger.info(`User already exists with email: ${data.email}, using existing user ID: ${user._id}`);
         
         // Update user fields if they're provided and different
         const updates: Record<string, unknown> = {};
@@ -175,27 +181,33 @@ export const createTeamMember = asyncHandler(
         if (data.avatar !== undefined && data.avatar !== user.avatar) updates.avatar = data.avatar;
         
         if (Object.keys(updates).length > 0) {
-          await userService.update(user.id, updates);
+          await User.findByIdAndUpdate(user._id, updates);
           logger.info(`Updated existing user ${user.email} with new information`);
         }
       }
 
-      userId = user.id;
+      userId = String(user._id);
       jobId = data.jobId; // Can be undefined for general team members
 
       // If jobId is provided, verify it exists
       if (jobId) {
-        const job = await jobService.findById(jobId);
+        if (!mongoose.Types.ObjectId.isValid(jobId)) {
+          logger.error(`Invalid jobId format: ${jobId}`);
+          throw new BadRequestError('Invalid Job ID format');
+        }
+
+        const job = await Job.findById(jobId);
         if (!job) {
           logger.error(`Job not found with ID: ${jobId}`);
           throw new NotFoundError('Job');
         }
 
         // Check if team member already exists for this job
-        const allTeamMembers = await teamMemberService.find([]);
-        const existingTeamMember = allTeamMembers.find((tm: any) =>
-          tm.userId === userId && tm.jobId === jobId && tm.isActive === true
-        );
+        const existingTeamMember = await TeamMember.findOne({
+          userId: userId,
+          jobId: jobId,
+          isActive: true,
+        });
 
         if (existingTeamMember) {
           logger.warn(`Team member already exists: user ${userId} on job ${jobId}`);
@@ -203,10 +215,11 @@ export const createTeamMember = asyncHandler(
         }
       } else {
         // Check if general team member (without job) already exists
-        const allTeamMembers = await teamMemberService.find([]);
-        const existingGeneralTeamMember = allTeamMembers.find((tm: any) =>
-          tm.userId === userId && !tm.jobId && tm.isActive === true
-        );
+        const existingGeneralTeamMember = await TeamMember.findOne({
+          userId: userId,
+          jobId: { $exists: false },
+          isActive: true,
+        });
 
         if (existingGeneralTeamMember) {
           logger.warn(`General team member already exists for user ${userId}`);
@@ -235,7 +248,7 @@ export const createTeamMember = asyncHandler(
       role: data.role || 'recruiter',
       permissions: backendPermissions,
       isActive: data.status === 'active' || data.status === undefined,
-      addedBy: req.user?.id,
+      addedBy: req.user?._id,
     };
 
     // Only add jobId if it's provided
@@ -244,11 +257,17 @@ export const createTeamMember = asyncHandler(
     }
 
     // Create team member
-    const teamMemberId = await teamMemberService.create(teamMemberData);
-    const teamMember = await teamMemberService.findById(teamMemberId);
+    const teamMember = await TeamMember.create(teamMemberData);
 
-    // Get the user for logging
-    const populatedUser = await userService.findById(userId);
+    // Populate references
+    await teamMember.populate([
+      { path: 'userId', select: 'firstName lastName email avatar role phone title department' },
+      { path: 'jobId', select: 'title clientId' },
+      { path: 'addedBy', select: 'firstName lastName email' },
+    ]);
+
+    // Get the populated user for logging
+    const populatedUser = await User.findById(userId);
     logger.info(`Team member added: ${populatedUser?.email} to job ${jobId || 'general team'} by ${req.user?.email}`);
 
     // Send assignment email notification
@@ -259,7 +278,7 @@ export const createTeamMember = asyncHandler(
         let entityType = 'team';
         
         if (jobId) {
-          const job = await jobService.findById(jobId);
+          const job = await Job.findById(jobId);
           if (job) {
             entityName = job.title;
             entityType = 'job';
@@ -293,13 +312,11 @@ export const updateTeamMember = asyncHandler(
     const updates = req.body;
 
     // Try to find by TeamMember ID first
-    let teamMember = await teamMemberService.findById(id);
+    let teamMember = await TeamMember.findById(id);
     
     // If not found, try to find by User ID (in case frontend sends user ID)
     if (!teamMember) {
-      const allTeamMembers = await teamMemberService.find([]);
-      const foundByUserId = allTeamMembers.find((tm: any) => tm.userId === id);
-      teamMember = foundByUserId || null;
+      teamMember = await TeamMember.findOne({ userId: id });
     }
     
     if (!teamMember) {
@@ -323,11 +340,15 @@ export const updateTeamMember = asyncHandler(
 
     // Update user if there are user field updates
     if (Object.keys(userUpdates).length > 0) {
-      await userService.update(teamMember.userId, userUpdates);
+      await User.findByIdAndUpdate(
+        teamMember.userId,
+        userUpdates,
+        { new: true, runValidators: true }
+      );
       logger.info(`Updated user ${teamMember.userId} with fields: ${Object.keys(userUpdates).join(', ')}`);
       
       // Send notification email about profile/permission changes
-      const updatedUser = await userService.findById(teamMember.userId);
+      const updatedUser = await User.findById(teamMember.userId);
       if (updatedUser && updatedUser.email) {
         try {
           const changes = Object.keys(userUpdates).map(key => {
@@ -371,11 +392,15 @@ export const updateTeamMember = asyncHandler(
 
     // Update team member if there are team member field updates
     if (Object.keys(teamMemberUpdates).length > 0) {
-      await teamMemberService.update(teamMember.id, teamMemberUpdates);
+      await TeamMember.findByIdAndUpdate(
+        id,
+        teamMemberUpdates,
+        { new: true, runValidators: true }
+      );
       logger.info(`Updated team member ${id} with fields: ${Object.keys(teamMemberUpdates).join(', ')}`);
       
       // Send notification email about team member changes (role/permissions)
-      const user = await userService.findById(teamMember.userId);
+      const user = await User.findById(teamMember.userId);
       if (user && user.email) {
         try {
           const changes = Object.keys(teamMemberUpdates).map(key => {
@@ -406,10 +431,14 @@ export const updateTeamMember = asyncHandler(
       }
     }
 
-    // Fetch the updated team member
-    const updatedTeamMember = await teamMemberService.findById(teamMember.id);
+    // Fetch the updated team member with populated fields
+    const updatedTeamMember = await TeamMember.findById(teamMember._id).populate([
+      { path: 'userId', select: 'firstName lastName email avatar role phone title department permissions' },
+      { path: 'jobId', select: 'title clientId' },
+      { path: 'addedBy', select: 'firstName lastName email' },
+    ]);
 
-    logger.info(`Team member updated: ${teamMember.id} by ${req.user?.email}`);
+    logger.info(`Team member updated: ${teamMember._id} by ${req.user?.email}`);
 
     successResponse(res, updatedTeamMember, 'Team member updated successfully');
   }
@@ -422,8 +451,11 @@ export const deleteTeamMember = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    await teamMemberService.update(id, { isActive: false });
-    const teamMember = await teamMemberService.findById(id);
+    const teamMember = await TeamMember.findByIdAndUpdate(
+      id,
+      { isActive: false },
+      { new: true }
+    );
 
     if (!teamMember) {
       throw new NotFoundError('Team member not found');
@@ -442,10 +474,10 @@ export const getJobTeamMembers = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { jobId } = req.params;
 
-    const allTeamMembers = await teamMemberService.find([]);
-    const teamMembers = allTeamMembers
-      .filter((tm: any) => tm.jobId === jobId && tm.isActive === true)
-      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const teamMembers = await TeamMember.find({ jobId, isActive: true })
+      .populate('userId', 'firstName lastName email avatar role phone title department')
+      .populate('addedBy', 'firstName lastName email')
+      .sort({ createdAt: -1 });
 
     successResponse(res, teamMembers, 'Job team members retrieved successfully');
   }

@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
-import mongoose from "mongoose";
-import { Message } from "../models";
+import { messageService } from "../services/firestore";
 import logger from "../utils/logger";
 
 // Generate conversationId from two user IDs (sorted to ensure consistency)
@@ -16,28 +15,34 @@ export const getMessages = async (req: Request, res: Response) => {
   try {
     const userId = req.userId;
 
-    // Get only internal messages (not email tracking) where user is sender or recipient
-    const messages = await Message.find({
-      $or: [{ senderId: userId }, { recipientId: userId }],
-      conversationId: { $exists: true, $ne: null }, // Only internal messages have conversationId
-      emailId: { $exists: false }, // Exclude email tracking records
-    })
-      .sort({ sentAt: -1 })
-      .limit(1000) // Limit to recent messages
-      .lean();
+    // Get all messages
+    const allMessages = await messageService.find([]);
+    
+    // Filter messages where user is sender or recipient, with conversationId, and without emailId
+    const messages = allMessages.filter((msg: any) => 
+      (msg.senderId === userId || msg.recipientId === userId) &&
+      msg.conversationId && // Only internal messages have conversationId
+      !msg.emailId // Exclude email tracking records
+    );
 
-    // Transform _id to id for frontend compatibility
-    const transformedMessages = messages.map((msg) => {
+    // Sort by sentAt descending
+    messages.sort((a: any, b: any) => 
+      new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()
+    );
+
+    // Limit to recent messages
+    const recentMessages = messages.slice(0, 1000);
+
+    // Transform messages
+    const transformedMessages = recentMessages.map((msg: any) => {
       // Skip messages without required internal messaging fields
       if (!msg.senderId || !msg.recipientId) {
         return null;
       }
       return {
         ...msg,
-        id: msg._id.toString(),
         senderId: msg.senderId.toString(),
         recipientId: msg.recipientId.toString(),
-        _id: undefined,
       };
     }).filter(Boolean);
 
@@ -121,12 +126,10 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
     const { id } = req.params;
     const userId = req.userId;
 
-    const message = await Message.findOne({
-      _id: id,
-      $or: [{ senderId: userId }, { recipientId: userId }],
-    }).lean();
+    const message = await messageService.findById(id);
 
-    if (!message || !message.senderId || !message.recipientId) {
+    if (!message || !message.senderId || !message.recipientId ||
+        (message.senderId !== userId && message.recipientId !== userId)) {
       res.status(404).json({
         status: "error",
         message: "Message not found",
@@ -136,10 +139,8 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
 
     const transformedMessage = {
       ...message,
-      id: (message._id as any).toString(),
       senderId: message.senderId.toString(),
       recipientId: message.recipientId.toString(),
-      _id: undefined,
     };
 
     res.status(200).json({
@@ -190,35 +191,31 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // Convert string IDs to ObjectId
-    const senderObjectId = new mongoose.Types.ObjectId(userId);
-    const recipientObjectId = new mongoose.Types.ObjectId(recipientId);
-
     // Generate or use provided conversationId
     const finalConversationId =
       conversationId || generateConversationId(userId!, recipientId);
 
-    const message = await Message.create({
+    const messageId = await messageService.create({
       conversationId: finalConversationId,
-      senderId: senderObjectId,
+      senderId: userId!,
       senderName: `${user.firstName} ${user.lastName}`.trim() || user.email,
       senderRole: user.role,
       senderAvatar: user.avatar || "",
-      recipientId: recipientObjectId,
+      recipientId,
       recipientName,
       recipientRole,
       recipientAvatar: recipientAvatar || "",
       message: messageText,
       read: false,
       sentAt: new Date(),
-    });
+    } as any);
+
+    const message = await messageService.findById(messageId);
 
     const transformedMessage = {
-      ...message.toObject(),
-      id: (message._id as any).toString(),
-      senderId: message.senderId?.toString() || '',
-      recipientId: message.recipientId?.toString() || '',
-      _id: undefined,
+      ...message,
+      senderId: message!.senderId?.toString() || '',
+      recipientId: message!.recipientId?.toString() || '',
     };
 
     logger.info(`Message sent from ${userId} to ${recipientId}`);
@@ -246,14 +243,11 @@ export const updateMessage = async (req: Request, res: Response): Promise<void> 
     const userId = req.userId;
     const { read } = req.body;
 
-    // Only recipient can mark message as read
-    const message = await Message.findOneAndUpdate(
-      { _id: id, recipientId: userId },
-      { read },
-      { new: true }
-    ).lean();
+    // Check if message exists and user is the recipient
+    const message = await messageService.findById(id);
 
-    if (!message || !message.senderId || !message.recipientId) {
+    if (!message || !message.senderId || !message.recipientId || 
+        message.recipientId !== userId) {
       res.status(404).json({
         status: "error",
         message: "Message not found or you are not the recipient",
@@ -261,12 +255,14 @@ export const updateMessage = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // Update message
+    await messageService.update(id, { read } as any);
+    const updatedMessage = await messageService.findById(id);
+
     const transformedMessage = {
-      ...message,
-      id: (message._id as any).toString(),
-      senderId: message.senderId.toString(),
-      recipientId: message.recipientId.toString(),
-      _id: undefined,
+      ...updatedMessage,
+      senderId: updatedMessage!.senderId!.toString(),
+      recipientId: updatedMessage!.recipientId!.toString(),
     };
 
     res.status(200).json({
@@ -291,19 +287,19 @@ export const deleteMessage = async (req: Request, res: Response): Promise<void> 
     const { id } = req.params;
     const userId = req.userId;
 
-    // Only sender can delete their own messages
-    const message = await Message.findOneAndDelete({
-      _id: id,
-      senderId: userId,
-    });
+    // Check if message exists and user is the sender
+    const message = await messageService.findById(id);
 
-    if (!message) {
+    if (!message || message.senderId !== userId) {
       res.status(404).json({
         status: "error",
         message: "Message not found or you are not the sender",
       });
       return;
     }
+
+    // Delete the message
+    await messageService.delete(id);
 
     res.status(200).json({
       status: "success",
@@ -327,21 +323,26 @@ export const getConversationMessages = async (req: Request, res: Response) => {
     const { conversationId } = req.params;
     const userId = req.userId;
 
-    const messages = await Message.find({
-      conversationId,
-      $or: [{ senderId: userId }, { recipientId: userId }],
-    })
-      .sort({ sentAt: 1 })
-      .lean();
+    // Get all messages
+    const allMessages = await messageService.find([]);
+    
+    // Filter by conversationId and user participation
+    let messages = allMessages.filter((msg: any) =>
+      msg.conversationId === conversationId &&
+      (msg.senderId === userId || msg.recipientId === userId)
+    );
+
+    // Sort by sentAt ascending
+    messages.sort((a: any, b: any) => 
+      new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
+    );
 
     const transformedMessages = messages
-      .filter((msg) => msg.senderId && msg.recipientId)
-      .map((msg) => ({
+      .filter((msg: any) => msg.senderId && msg.recipientId)
+      .map((msg: any) => ({
         ...msg,
-        id: (msg._id as any).toString(),
         senderId: msg.senderId!.toString(),
         recipientId: msg.recipientId!.toString(),
-        _id: undefined,
       }));
 
     res.status(200).json({
@@ -369,13 +370,21 @@ export const markConversationAsRead = async (req: Request, res: Response) => {
     const { conversationId } = req.params;
     const userId = req.userId;
 
-    await Message.updateMany(
-      {
-        conversationId,
-        recipientId: userId,
-        read: false,
-      },
-      { read: true }
+    // Get all messages in the conversation
+    const allMessages = await messageService.find([]);
+    
+    // Filter messages that need to be marked as read
+    const messagesToUpdate = allMessages.filter((msg: any) =>
+      msg.conversationId === conversationId &&
+      msg.recipientId === userId &&
+      !msg.read
+    );
+
+    // Update each message
+    await Promise.all(
+      messagesToUpdate.map((msg: any) =>
+        messageService.update(msg.id, { read: true } as any)
+      )
     );
 
     res.status(200).json({

@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
-import mongoose from "mongoose";
-import { Job, Pipeline } from "../models";
+import { jobService, pipelineService, candidateService, applicationService } from "../services/firestore";
 import {
   BulkUpdateJobStatusInput,
   CreateJobInput,
@@ -27,27 +26,26 @@ export const createJob = asyncHandler(
 
     // If pipelineId provided, verify it exists
     if (data.pipelineId) {
-      const pipeline = await Pipeline.findById(data.pipelineId);
+      const pipeline = await pipelineService.findById(data.pipelineId);
       if (!pipeline) {
         throw new NotFoundError("Pipeline not found");
       }
     }
 
     // Create job
-    const job = await Job.create({
+    const jobId = await jobService.create({
       ...data,
-      createdBy: req.user?._id,
-    });
+      createdBy: req.user?.id,
+    } as any);
 
-    // Populate references
-    await job.populate([
-      { path: "clientId", select: "companyName logo" },
-      { path: "pipelineId", select: "name stages" },
-      { path: "categoryIds", select: "name" },
-      { path: "tagIds", select: "name color" },
-    ]);
+    // Fetch created job
+    const job = await jobService.findById(jobId);
+    
+    if (!job) {
+      throw new Error("Failed to create job");
+    }
 
-    logger.info(`Job created: ${job.title} by user ${req.user?._id}`);
+    logger.info(`Job created: ${job.title} by user ${req.user?.id}`);
 
     successResponse(res, job, "Job created successfully", 201);
   }
@@ -71,24 +69,36 @@ export const getJobs = asyncHandler(
       sortOrder = "desc",
     } = req.query as any as ListJobsQuery;
 
-    // Build filter
-    const filter: any = {};
-    if (clientId) filter.clientId = clientId;
-    if (status) filter.status = status;
-    if (jobType) filter.jobType = jobType;
-    if (experienceLevel) filter.experienceLevel = experienceLevel;
-    if (locationType) filter.locationType = locationType;
+    // Fetch all jobs
+    let allJobs = await jobService.find([]);
 
+    // Apply filters in memory
+    if (clientId) {
+      allJobs = allJobs.filter((job: any) => job.clientId === clientId);
+    }
+    if (status) {
+      allJobs = allJobs.filter((job: any) => job.status === status);
+    }
+    if (jobType) {
+      allJobs = allJobs.filter((job: any) => job.jobType === jobType);
+    }
+    if (experienceLevel) {
+      allJobs = allJobs.filter((job: any) => job.experienceLevel === experienceLevel);
+    }
+    if (locationType) {
+      allJobs = allJobs.filter((job: any) => job.locationType === locationType);
+    }
     if (search) {
-      filter.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-        { location: { $regex: search, $options: "i" } },
-      ];
+      const searchLower = search.toLowerCase();
+      allJobs = allJobs.filter((job: any) =>
+        job.title?.toLowerCase().includes(searchLower) ||
+        job.description?.toLowerCase().includes(searchLower) ||
+        job.location?.toLowerCase().includes(searchLower)
+      );
     }
 
-    // Get total count
-    const totalCount = await Job.countDocuments(filter);
+    // Get total count after filtering
+    const totalCount = allJobs.length;
 
     // Calculate pagination
     const pagination = paginateResults(totalCount, {
@@ -98,90 +108,64 @@ export const getJobs = asyncHandler(
       order: sortOrder,
     });
 
-    // Calculate skip
+    // Apply sorting
+    allJobs.sort((a: any, b: any) => {
+      const aVal = a[sortBy];
+      const bVal = b[sortBy];
+      if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
+      if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    // Apply pagination
     const skip = (page - 1) * limit;
+    const jobs = allJobs.slice(skip, skip + limit);
 
-    // Build sort object
-    const sort: any = {};
-    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
-
-    // Fetch data
-    const jobs = await Job.find(filter)
-      .populate("clientId", "companyName logo")
-      .populate("pipelineId", "name stages")
-      .populate("categoryIds", "name color")
-      .populate("tagIds", "name color")
-      .sort(sort)
-      .skip(skip)
-      .limit(limit)
-      .lean(); // Use lean for better performance
-
-    // Calculate statistics for ALL jobs in batch (avoid N+1 queries)
-    const Candidate = mongoose.model("Candidate");
-    const jobIds = jobs.map((j: any) => j._id);
+    // Get job IDs for candidate lookup
+    const jobIds = jobs.map((j: any) => j.id);
     
-    // Fetch ALL candidates for ALL jobs in ONE query with aggregation
-    const candidateStats = await Candidate.aggregate([
-      {
-        $match: {
-          jobIds: { $in: jobIds }
-        }
-      },
-      {
-        $unwind: "$jobIds"
-      },
-      {
-        $match: {
-          jobIds: { $in: jobIds }
-        }
-      },
-      {
-        $group: {
-          _id: "$jobIds",
-          total: { $sum: 1 },
-          active: {
-            $sum: {
-              $cond: [
-                { $in: ["$status", ["active", "interviewing", "offered"]] },
-                1,
-                0
-              ]
-            }
-          },
-          hired: {
-            $sum: {
-              $cond: [{ $eq: ["$status", "hired"] }, 1, 0]
-            }
-          }
-        }
-      }
-    ]);
+    // Fetch ALL candidates for ALL jobs
+    const allCandidates = await candidateService.find([]);
     
-    // Create a map for fast lookup
+    // Filter candidates that have any of these job IDs in their jobIds array
+    const relevantCandidates = allCandidates.filter((candidate: any) =>
+      candidate.jobIds?.some((jobId: string) => jobIds.includes(jobId))
+    );
+    
+    // Calculate statistics for each job in memory
     const statsMap = new Map();
-    candidateStats.forEach((stat: any) => {
-      statsMap.set(stat._id.toString(), {
-        totalCandidates: stat.total,
-        activeCandidates: stat.active,
-        hiredCandidates: stat.hired,
+    
+    jobIds.forEach((jobId: string) => {
+      const jobCandidates = relevantCandidates.filter((candidate: any) =>
+        candidate.jobIds?.includes(jobId)
+      );
+      
+      const total = jobCandidates.length;
+      const active = jobCandidates.filter((c: any) =>
+        ["active", "interviewing", "offered"].includes(c.status)
+      ).length;
+      const hired = jobCandidates.filter((c: any) =>
+        c.status === "hired"
+      ).length;
+      
+      statsMap.set(jobId, {
+        totalCandidates: total,
+        activeCandidates: active,
+        hiredCandidates: hired,
       });
     });
     
-    // Add statistics to each job and transform _id to id
+    // Add statistics to each job
     const jobsWithStats = jobs.map((job: any) => {
-      const jobId = (job._id || job.id).toString();
+      const jobId = job.id;
       const stats = statsMap.get(jobId) || {
         totalCandidates: 0,
         activeCandidates: 0,
         hiredCandidates: 0,
       };
 
-      // Transform _id to id for frontend compatibility (since we used .lean())
-      const { _id, __v, ...jobData } = job;
-
       return {
-        ...jobData,
-        id: _id.toString(),
+        ...job,
         statistics: stats,
       };
     });
@@ -204,37 +188,31 @@ export const getJobById = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const job = await Job.findById(id)
-      .populate("clientId", "companyName logo website industry")
-      .populate("pipelineId", "name stages")
-      .populate("categoryIds", "name color")
-      .populate("tagIds", "name color")
-      .populate("createdBy", "firstName lastName email");
+    const job = await jobService.findById(id);
 
     if (!job) {
       throw new NotFoundError("Job not found");
     }
 
     // Get candidate statistics
-    const Candidate = mongoose.model("Candidate");
-    const totalCandidates = await Candidate.countDocuments({
-      jobIds: id,
-    });
+    const allCandidates = await candidateService.find([]);
+    
+    const jobCandidates = allCandidates.filter((c: any) =>
+      c.jobIds?.includes(id)
+    );
 
-    const activeCandidates = await Candidate.countDocuments({
-      jobIds: id,
-      status: { $in: ["active", "interviewing", "offered"] },
-    });
-
-    const hiredCandidates = await Candidate.countDocuments({
-      jobIds: id,
-      status: "hired",
-    });
+    const totalCandidates = jobCandidates.length;
+    const activeCandidates = jobCandidates.filter((c: any) =>
+      ["active", "interviewing", "offered"].includes(c.status)
+    ).length;
+    const hiredCandidates = jobCandidates.filter((c: any) =>
+      c.status === "hired"
+    ).length;
 
     successResponse(
       res,
       {
-        ...job.toJSON(),
+        ...job,
         statistics: {
           totalCandidates,
           activeCandidates,
@@ -261,7 +239,7 @@ export const updateJob = asyncHandler(
 
     // If pipelineId is being changed, verify it exists
     if (updates.pipelineId) {
-      const pipeline = await Pipeline.findById(updates.pipelineId);
+      const pipeline = await pipelineService.findById(updates.pipelineId);
       if (!pipeline) {
         throw new NotFoundError("Pipeline not found");
       }
@@ -272,51 +250,37 @@ export const updateJob = asyncHandler(
         : null;
 
       if (firstStage) {
-        // Update all candidates associated with this job to have the first stage
-        const { Candidate } = await import('../models');
-        
-        // Find all candidates with this job in their jobIds array
-        const candidates = await Candidate.find({
-          jobIds: id,
-          currentPipelineStageId: null // Only update candidates without a stage
-        });
+        // Find all candidates with this job in their jobIds array and no stage
+        const allCandidates = await candidateService.find([]);
+        const candidatesToUpdate = allCandidates.filter((c: any) =>
+          c.jobIds?.includes(id) && !c.currentStage
+        );
 
-        if (candidates.length > 0) {
-          // Bulk update all candidates to set the first stage
-          await Candidate.updateMany(
-            {
-              jobIds: id,
-              currentPipelineStageId: null
-            },
-            {
-              $set: { currentPipelineStageId: firstStage._id }
-            }
+        if (candidatesToUpdate.length > 0) {
+          // Update each candidate to set the first stage
+          await Promise.all(
+            candidatesToUpdate.map((candidate: any) =>
+              candidateService.update(candidate.id, {
+                currentStage: firstStage.id
+              })
+            )
           );
 
           logger.info(
-            `Assigned ${candidates.length} candidates to first stage "${firstStage.name}" of pipeline "${pipeline.name}"`
+            `Assigned ${candidatesToUpdate.length} candidates to first stage "${firstStage.name}" of pipeline "${pipeline.name}"`
           );
         }
       }
     }
 
-    // Update job using findByIdAndUpdate with proper options
-    const job = await Job.findByIdAndUpdate(
-      id,
-      {
-        ...updates,
-        updatedBy: req.user?._id,
-      },
-      {
-        new: true, // Return updated document
-        runValidators: true, // Run schema validators
-      }
-    ).populate([
-      { path: "clientId", select: "name logo" },
-      { path: "pipelineId", select: "name stages" },
-      { path: "categoryIds", select: "name" },
-      { path: "tagIds", select: "name color" },
-    ]);
+    // Update job
+    await jobService.update(id, {
+      ...updates,
+      updatedBy: req.user?.id,
+    } as any);
+
+    // Get updated job
+    const job = await jobService.findById(id);
 
     if (!job) {
       throw new NotFoundError("Job not found");
@@ -335,23 +299,23 @@ export const deleteJob = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    const job = await Job.findById(id);
+    const job = await jobService.findById(id);
 
     if (!job) {
       throw new NotFoundError("Job not found");
     }
 
     // Check if there are applications
-    const Application = mongoose.model("Application");
-    const applicationCount = await Application.countDocuments({ jobId: id });
+    const allApplications = await applicationService.find([]);
+    const jobApplications = allApplications.filter((app: any) => app.jobId === id);
 
-    if (applicationCount > 0) {
+    if (jobApplications.length > 0) {
       throw new CustomValidationError(
-        `Cannot delete job with ${applicationCount} applications. Please close the job instead.`
+        `Cannot delete job with ${jobApplications.length} applications. Please close the job instead.`
       );
     }
 
-    await job.deleteOne();
+    await jobService.delete(id);
 
     logger.info(`Job deleted: ${job.title}`);
 
@@ -366,29 +330,39 @@ export const bulkUpdateJobStatus = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { jobIds, status }: BulkUpdateJobStatusInput = req.body;
 
-    // Validate all IDs
-    const validIds = jobIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+    // Validate all IDs (simple string validation for Firestore)
+    const validIds = jobIds.filter((id) => typeof id === 'string' && id.length > 0);
     if (validIds.length !== jobIds.length) {
       throw new CustomValidationError("Some job IDs are invalid");
     }
 
-    // Update jobs
-    const result = await Job.updateMany(
-      { _id: { $in: validIds } },
-      { status, updatedBy: req.user?._id }
+    // Update jobs in a loop
+    let modifiedCount = 0;
+    await Promise.all(
+      validIds.map(async (id) => {
+        try {
+          await jobService.update(id, { 
+            status, 
+            updatedBy: req.user?.id 
+          } as any);
+          modifiedCount++;
+        } catch (error) {
+          logger.error(`Failed to update job ${id}:`, error);
+        }
+      })
     );
 
     logger.info(
-      `Bulk updated ${result.modifiedCount} jobs to status: ${status}`
+      `Bulk updated ${modifiedCount} jobs to status: ${status}`
     );
 
     successResponse(
       res,
       {
-        modifiedCount: result.modifiedCount,
+        modifiedCount,
         status,
       },
-      `Successfully updated ${result.modifiedCount} jobs`
+      `Successfully updated ${modifiedCount} jobs`
     );
   }
 );
@@ -400,51 +374,35 @@ export const getJobStats = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { clientId } = req.query;
 
-    const filter: any = {};
-    if (clientId) filter.clientId = clientId;
+    // Fetch all jobs
+    let allJobs = await jobService.find([]);
+    
+    // Apply filter if clientId is provided
+    if (clientId) {
+      allJobs = allJobs.filter((job: any) => job.clientId === clientId);
+    }
 
-    const stats = await Job.aggregate([
-      { $match: filter },
-      {
-        $facet: {
-          byStatus: [
-            {
-              $group: {
-                _id: "$status",
-                count: { $sum: 1 },
-              },
-            },
-          ],
-          byEmploymentType: [
-            {
-              $group: {
-                _id: "$employmentType",
-                count: { $sum: 1 },
-              },
-            },
-          ],
-          total: [
-            {
-              $count: "count",
-            },
-          ],
-        },
-      },
-    ]);
+    // Calculate statistics in memory
+    const total = allJobs.length;
+    
+    // Group by status
+    const byStatus = allJobs.reduce((acc: any, job: any) => {
+      const status = job.status || 'draft';
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {});
+    
+    // Group by employment type
+    const byEmploymentType = allJobs.reduce((acc: any, job: any) => {
+      const empType = job.employmentType || 'full_time';
+      acc[empType] = (acc[empType] || 0) + 1;
+      return acc;
+    }, {});
 
     const result = {
-      total: stats[0].total[0]?.count || 0,
-      byStatus: stats[0].byStatus.reduce((acc: any, item: any) => {
-        acc[item._id] = item.count;
-        return acc;
-      }, {}),
-      byEmploymentType: stats[0].byEmploymentType.reduce(
-        (acc: any, item: any) => {
-          acc[item._id] = item.count;
-          return acc;
-        },
-        {}
-      ),
+      total,
+      byStatus,
+      byEmploymentType,
     };
 
     successResponse(res, result, "Job statistics retrieved successfully");

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { User } from '../models';
+import { userService, IUser } from '../services/firestore';
 import { asyncHandler, successResponse } from '../utils/helpers';
 import { BadRequestError, AuthenticationError, NotFoundError } from '../utils/errors';
 import {
@@ -36,7 +36,7 @@ export const register = asyncHandler(
     }
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const existingUser = await userService.findByEmail(email.toLowerCase());
     if (existingUser) {
       throw new BadRequestError('User with this email already exists');
     }
@@ -71,7 +71,7 @@ export const register = asyncHandler(
     const userPermissions = permissions ? { ...defaultPermissions, ...permissions } : defaultPermissions;
 
     // Create user
-    const user = await User.create({
+    const userId = await userService.create({
       email: email.toLowerCase(),
       firstName,
       lastName,
@@ -85,7 +85,14 @@ export const register = asyncHandler(
       emailVerificationExpires,
       isActive: true,
       permissions: userPermissions,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
+
+    const user = await userService.findById(userId);
+    if (!user) {
+      throw new Error('Failed to create user');
+    }
 
     logger.info(`New user registered: ${user.email} by ${req.user?.email}`);
 
@@ -99,7 +106,20 @@ export const register = asyncHandler(
     successResponse(
       res,
       {
-        user: user.toJSON(),
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          department: user.department,
+          title: user.title,
+          phone: user.phone,
+          avatar: user.avatar,
+          emailVerified: user.emailVerified,
+          isActive: user.isActive,
+          permissions: user.permissions,
+        },
         message: emailSent ? 'Invitation email sent to user' : 'User created but email failed to send',
       },
       'User registered successfully',
@@ -116,7 +136,7 @@ export const registerFirstAdmin = asyncHandler(
     const { email, firstName, lastName, password } = req.body;
 
     // Check if any users exist
-    const userCount = await User.countDocuments();
+    const userCount = await userService.count();
     if (userCount > 0) {
       throw new BadRequestError('Admin user already exists. Please contact your administrator.');
     }
@@ -151,7 +171,7 @@ export const registerFirstAdmin = asyncHandler(
     };
 
     // Create first admin user (auto-verified)
-    const admin = await User.create({
+    const adminId = await userService.create({
       email: email.toLowerCase(),
       firstName,
       lastName,
@@ -160,33 +180,38 @@ export const registerFirstAdmin = asyncHandler(
       isActive: true,
       emailVerified: true, // Auto-verify first admin
       permissions: adminPermissions,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
+
+    const admin = await userService.findById(adminId);
+    if (!admin) {
+      throw new Error('Failed to create admin');
+    }
 
     // Generate tokens
     const accessToken = generateAccessToken({
-      userId: (admin._id as any).toString(),
+      userId: admin.id!,
       email: admin.email,
       role: admin.role,
     });
 
     const refreshToken = generateRefreshToken({
-      userId: (admin._id as any).toString(),
+      userId: admin.id!,
       email: admin.email,
       role: admin.role,
     });
 
     // Save refresh token
-    admin.refreshToken = refreshToken;
-    (admin as any).refreshTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await admin.save();
+    await userService.updateRefreshToken(admin.id!, refreshToken);
 
-    logger.info('First admin user created', { userId: admin._id, email: admin.email });
+    logger.info('First admin user created', { userId: admin.id, email: admin.email });
 
     successResponse(
       res,
       {
         user: {
-          id: admin._id,
+          id: admin.id,
           email: admin.email,
           firstName: admin.firstName,
           lastName: admin.lastName,
@@ -216,7 +241,7 @@ export const login = asyncHandler(
     }
 
     // Find user with password hash (explicitly select it)
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+passwordHash');
+    const user = await userService.findByEmail(email.toLowerCase());
     
     if (!user) {
       throw new AuthenticationError('Invalid email or password');
@@ -240,7 +265,7 @@ export const login = asyncHandler(
 
     // Generate tokens
     const payload: TokenPayload = {
-      userId: String(user._id),
+      userId: user.id!,
       email: user.email,
       role: user.role,
     };
@@ -249,13 +274,14 @@ export const login = asyncHandler(
     const refreshToken = generateRefreshToken(payload);
 
     // Save refresh token to user
-    user.refreshToken = refreshToken;
-    user.lastLogin = new Date();
-    await user.save();
+    await userService.update(user.id!, {
+      refreshToken,
+      lastLogin: new Date(),
+    });
 
     // Log activity (fire-and-forget to not block login)
     logActivity({
-      userId: String(user._id),
+      userId: user.id!,
       action: 'login',
       metadata: { method: 'password' }
     }).catch(err => logger.error('Failed to log login activity:', err));
@@ -271,7 +297,21 @@ export const login = asyncHandler(
     });
 
     successResponse(res, {
-      user: user.toJSON(),
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        department: user.department,
+        title: user.title,
+        phone: user.phone,
+        avatar: user.avatar,
+        emailVerified: user.emailVerified,
+        isActive: user.isActive,
+        permissions: user.permissions,
+        lastLogin: new Date(),
+      },
       accessToken,
     }, 'Login successful');
   }
@@ -290,7 +330,7 @@ export const requestMagicLink = asyncHandler(
     }
 
     // Find user
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await userService.findByEmail(email.toLowerCase());
     
     if (!user) {
       // Don't reveal if user exists or not for security
@@ -307,9 +347,7 @@ export const requestMagicLink = asyncHandler(
     const magicLinkToken = generateToken();
     const magicLinkExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
-    user.magicLinkToken = magicLinkToken;
-    user.magicLinkExpires = magicLinkExpires;
-    await user.save();
+    await userService.setMagicLinkToken(user.id!, magicLinkToken, magicLinkExpires);
 
     logger.info(`Magic link requested for: ${user.email}`);
 
@@ -336,10 +374,11 @@ export const verifyMagicLink = asyncHandler(
     }
 
     // Find user with valid magic link token
-    const user = await User.findOne({
-      magicLinkToken: token,
-      magicLinkExpires: { $gt: new Date() },
-    }).select('+magicLinkToken +magicLinkExpires');
+    const users = await userService.find([
+      { field: 'magicLinkToken', operator: '==', value: token },
+    ]);
+    
+    const user = users.find(u => u.magicLinkExpires && u.magicLinkExpires > new Date());
 
     if (!user) {
       throw new AuthenticationError('Invalid or expired magic link');
@@ -350,15 +389,17 @@ export const verifyMagicLink = asyncHandler(
       throw new AuthenticationError('Your account has been deactivated');
     }
 
-    // Clear magic link token
-    user.magicLinkToken = undefined;
-    user.magicLinkExpires = undefined;
-    user.emailVerified = true; // Auto-verify email if using magic link
-    user.lastLogin = new Date();
+    // Clear magic link token and update user
+    await userService.update(user.id!, {
+      magicLinkToken: undefined,
+      magicLinkExpires: undefined,
+      emailVerified: true,
+      lastLogin: new Date(),
+    });
 
     // Generate tokens
     const payload: TokenPayload = {
-      userId: String(user._id),
+      userId: user.id!,
       email: user.email,
       role: user.role,
     };
@@ -366,8 +407,8 @@ export const verifyMagicLink = asyncHandler(
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
 
-    user.refreshToken = refreshToken;
-    await user.save();
+    // Save refresh token to user
+    await userService.updateRefreshToken(user.id!, refreshToken);
 
     logger.info(`User logged in via magic link: ${user.email}`);
 
@@ -380,7 +421,20 @@ export const verifyMagicLink = asyncHandler(
     });
 
     successResponse(res, {
-      user: user.toJSON(),
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        department: user.department,
+        title: user.title,
+        phone: user.phone,
+        avatar: user.avatar,
+        emailVerified: true,
+        isActive: user.isActive,
+        permissions: user.permissions,
+      },
       accessToken,
     }, 'Login successful');
   }
@@ -398,10 +452,11 @@ export const verifyEmail = asyncHandler(
     }
 
     // Find user with valid email verification token
-    const user = await User.findOne({
-      emailVerificationToken: token,
-      emailVerificationExpires: { $gt: new Date() },
-    }).select('+emailVerificationToken +emailVerificationExpires +passwordHash');
+    const users = await userService.find([
+      { field: 'emailVerificationToken', operator: '==', value: token },
+    ]);
+    
+    const user = users.find(u => u.emailVerificationExpires && u.emailVerificationExpires > new Date());
 
     if (!user) {
       throw new BadRequestError('Invalid or expired verification token');
@@ -409,14 +464,13 @@ export const verifyEmail = asyncHandler(
 
     // Mark email as verified but DON'T clear the token yet
     // Token will be cleared when user sets their password
-    user.emailVerified = true;
-    await user.save();
+    await userService.verifyEmail(user.id!);
 
     logger.info(`Email verified for: ${user.email}`);
 
     // Generate tokens for auto-login
     const payload: TokenPayload = {
-      userId: String(user._id),
+      userId: user.id!,
       email: user.email,
       role: user.role,
     };
@@ -424,9 +478,10 @@ export const verifyEmail = asyncHandler(
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
 
-    user.refreshToken = refreshToken;
-    user.lastLogin = new Date();
-    await user.save();
+    await userService.update(user.id!, {
+      refreshToken,
+      lastLogin: new Date(),
+    });
 
     // Set refresh token as HTTP-only cookie
     res.cookie('refreshToken', refreshToken, {
@@ -437,7 +492,20 @@ export const verifyEmail = asyncHandler(
     });
 
     successResponse(res, {
-      user: user.toJSON(),
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        department: user.department,
+        title: user.title,
+        phone: user.phone,
+        avatar: user.avatar,
+        emailVerified: true,
+        isActive: user.isActive,
+        permissions: user.permissions,
+      },
       accessToken,
     }, 'Email verified successfully');
   }
@@ -462,21 +530,24 @@ export const setPassword = asyncHandler(
     }
 
     // Find user with valid email verification token
-    const user = await User.findOne({
-      emailVerificationToken: token,
-      emailVerificationExpires: { $gt: new Date() },
-    }).select('+emailVerificationToken +emailVerificationExpires +passwordHash');
+    const users = await userService.find([
+      { field: 'emailVerificationToken', operator: '==', value: token },
+    ]);
+    
+    const user = users.find(u => u.emailVerificationExpires && u.emailVerificationExpires > new Date());
 
     if (!user) {
       throw new BadRequestError('Invalid or expired verification token');
     }
 
     // Hash and set new password
-    user.passwordHash = await hashPassword(password);
-    user.emailVerified = true;
-    user.emailVerificationToken = undefined;
-    user.emailVerificationExpires = undefined;
-    await user.save();
+    const passwordHash = await hashPassword(password);
+    await userService.update(user.id!, {
+      passwordHash,
+      emailVerified: true,
+      emailVerificationToken: undefined,
+      emailVerificationExpires: undefined,
+    });
 
     logger.info(`Password set for: ${user.email}`);
 
@@ -496,7 +567,7 @@ export const forgotPassword = asyncHandler(
     }
 
     // Find user
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await userService.findByEmail(email.toLowerCase());
     
     if (!user) {
       // Don't reveal if user exists or not for security
@@ -508,9 +579,10 @@ export const forgotPassword = asyncHandler(
     const passwordResetToken = generateToken();
     const passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    user.passwordResetToken = passwordResetToken;
-    user.passwordResetExpires = passwordResetExpires;
-    await user.save();
+    await userService.update(user.id!, {
+      passwordResetToken,
+      passwordResetExpires,
+    });
 
     logger.info(`Password reset requested for: ${user.email}`);
 
@@ -544,20 +616,19 @@ export const resetPassword = asyncHandler(
     }
 
     // Find user with valid password reset token
-    const user = await User.findOne({
-      passwordResetToken: token,
-      passwordResetExpires: { $gt: new Date() },
-    }).select('+passwordResetToken +passwordResetExpires +passwordHash');
+    const users = await userService.find([
+      { field: 'passwordResetToken', operator: '==', value: token },
+    ]);
+    
+    const user = users.find(u => u.passwordResetExpires && u.passwordResetExpires > new Date());
 
     if (!user) {
       throw new BadRequestError('Invalid or expired reset token');
     }
 
     // Hash and set new password
-    user.passwordHash = await hashPassword(password);
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
-    await user.save();
+    const passwordHash = await hashPassword(password);
+    await userService.updatePassword(user.id!, passwordHash);
 
     logger.info(`Password reset for: ${user.email}`);
 
@@ -583,7 +654,7 @@ export const refreshAccessToken = asyncHandler(
     }
 
     // Find user and verify refresh token matches
-    const user = await User.findById(payload.userId).select('+refreshToken');
+    const user = await userService.findById(payload.userId);
     if (!user || user.refreshToken !== refreshToken) {
       throw new AuthenticationError('Invalid refresh token');
     }
@@ -595,7 +666,7 @@ export const refreshAccessToken = asyncHandler(
 
     // Generate new tokens
     const newPayload: TokenPayload = {
-      userId: String(user._id),
+      userId: user.id!,
       email: user.email,
       role: user.role,
     };
@@ -604,8 +675,7 @@ export const refreshAccessToken = asyncHandler(
     const newRefreshToken = generateRefreshToken(newPayload);
 
     // Update refresh token
-    user.refreshToken = newRefreshToken;
-    await user.save();
+    await userService.updateRefreshToken(user.id!, newRefreshToken);
 
     // Set new refresh token cookie
     res.cookie('refreshToken', newRefreshToken, {
@@ -630,7 +700,7 @@ export const logout = asyncHandler(
 
     if (userId) {
       // Clear refresh token from database
-      await User.findByIdAndUpdate(userId, { refreshToken: undefined });
+      await userService.update(userId, { refreshToken: undefined });
       logger.info(`User logged out: ${req.user?.email}`);
     }
 
@@ -652,13 +722,28 @@ export const getMe = asyncHandler(
       throw new AuthenticationError('Not authenticated');
     }
 
-    const user = await User.findById(userId);
+    const user = await userService.findById(userId);
 
     if (!user) {
       throw new NotFoundError('User not found');
     }
 
-    successResponse(res, user.toJSON(), 'User retrieved successfully');
+    successResponse(res, {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      department: user.department,
+      title: user.title,
+      phone: user.phone,
+      avatar: user.avatar,
+      emailVerified: user.emailVerified,
+      isActive: user.isActive,
+      permissions: user.permissions,
+      lastLogin: user.lastLogin,
+      createdAt: user.createdAt,
+    }, 'User retrieved successfully');
   }
 );
 
@@ -675,7 +760,7 @@ export const updateProfile = asyncHandler(
 
     const { firstName, lastName, phone, title, department, avatar } = req.body;
 
-    const user = await User.findById(userId);
+    const user = await userService.findById(userId);
 
     if (!user) {
       throw new NotFoundError('User not found');
@@ -683,34 +768,38 @@ export const updateProfile = asyncHandler(
 
     // Track changes for notification
     const changes: string[] = [];
+    const updates: Partial<IUser> = {};
     
     // Update allowed fields
     if (firstName && firstName !== user.firstName) {
-      user.firstName = firstName;
+      updates.firstName = firstName;
       changes.push('First name updated');
     }
     if (lastName && lastName !== user.lastName) {
-      user.lastName = lastName;
+      updates.lastName = lastName;
       changes.push('Last name updated');
     }
     if (phone !== undefined && phone !== user.phone) {
-      user.phone = phone;
+      updates.phone = phone;
       changes.push('Phone number updated');
     }
     if (title !== undefined && title !== user.title) {
-      user.title = title;
+      updates.title = title;
       changes.push('Job title updated');
     }
     if (department !== undefined && department !== user.department) {
-      user.department = department;
+      updates.department = department;
       changes.push('Department updated');
     }
     if (avatar !== undefined && avatar !== user.avatar) {
-      user.avatar = avatar;
+      updates.avatar = avatar;
       changes.push('Profile picture updated');
     }
 
-    await user.save();
+    // Update user if there are changes
+    if (Object.keys(updates).length > 0) {
+      await userService.update(userId, updates);
+    }
 
     logger.info('User profile updated', { userId });
 
@@ -730,7 +819,20 @@ export const updateProfile = asyncHandler(
       }
     }
 
-    successResponse(res, user.toJSON(), 'Profile updated successfully');
+    successResponse(res, {
+      id: user.id,
+      email: user.email,
+      firstName: updates.firstName || user.firstName,
+      lastName: updates.lastName || user.lastName,
+      role: user.role,
+      department: updates.department !== undefined ? updates.department : user.department,
+      title: updates.title !== undefined ? updates.title : user.title,
+      phone: updates.phone !== undefined ? updates.phone : user.phone,
+      avatar: updates.avatar !== undefined ? updates.avatar : user.avatar,
+      emailVerified: user.emailVerified,
+      isActive: user.isActive,
+      permissions: user.permissions,
+    }, 'Profile updated successfully');
   }
 );
 
@@ -758,9 +860,9 @@ export const updatePassword = asyncHandler(
     }
 
     // Find user with password hash
-    const user = await User.findById(userId).select('+passwordHash');
+    const user = await userService.findById(userId);
     
-    if (!user) {
+    if (!user || !user.passwordHash) {
       throw new NotFoundError('User not found');
     }
 
@@ -771,8 +873,8 @@ export const updatePassword = asyncHandler(
     }
 
     // Hash and set new password
-    user.passwordHash = await hashPassword(newPassword);
-    await user.save();
+    const passwordHash = await hashPassword(newPassword);
+    await userService.updatePassword(userId, passwordHash);
 
     logger.info(`Password updated for: ${user.email}`);
 
