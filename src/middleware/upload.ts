@@ -85,3 +85,40 @@ export const videoUpload = multer({
 
 // Middleware for single video upload
 export const uploadVideo = videoUpload.single('video');
+
+// File filter for image uploads (avatars, logos)
+const imageFileFilter = (
+  _req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  const allowedImageTypes = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+  ];
+
+  const allowedImageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+  const fileExtension = path.extname(file.originalname).toLowerCase();
+
+  if (allowedImageTypes.includes(file.mimetype) && allowedImageExtensions.includes(fileExtension)) {
+    cb(null, true);
+  } else {
+    cb(new ValidationError('Invalid file type. Only JPG, PNG, GIF, and WEBP image files are allowed.'));
+  }
+};
+
+// Create multer upload instance for images
+export const imageUpload = multer({
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB max file size for images
+  },
+  fileFilter: imageFileFilter,
+});
+
+// Middleware for single avatar/image upload
+export const uploadAvatar = imageUpload.single('avatar');
+export const uploadLogo = imageUpload.single('logo');

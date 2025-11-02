@@ -1,5 +1,6 @@
 import express from 'express';
 import { authenticate, requireRole } from '../middleware/auth';
+import { uploadAvatar } from '../middleware/upload';
 import {
   getUsers,
   getUserById,
@@ -7,6 +8,8 @@ import {
   updateUser,
   deleteUser,
   getUserStats,
+  uploadUserAvatar,
+  deleteUserAvatar,
 } from '../controllers/user.controller';
 
 const router = express.Router();
@@ -52,6 +55,27 @@ router.get(
   '/:id',
   requireRole('admin', 'recruiter'),
   getUserById
+);
+
+/**
+ * @route   POST /api/users/:id/avatar
+ * @desc    Upload user avatar
+ * @access  Authenticated user (own profile) or Admin
+ */
+router.post(
+  '/:id/avatar',
+  uploadAvatar,
+  uploadUserAvatar
+);
+
+/**
+ * @route   DELETE /api/users/:id/avatar
+ * @desc    Delete user avatar
+ * @access  Authenticated user (own profile) or Admin
+ */
+router.delete(
+  '/:id/avatar',
+  deleteUserAvatar
 );
 
 /**

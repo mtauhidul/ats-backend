@@ -4,6 +4,8 @@ import { asyncHandler, successResponse, paginateResults } from '../utils/helpers
 import { NotFoundError, BadRequestError } from '../utils/errors';
 import logger from '../utils/logger';
 import { sendTeamMemberUpdateEmail } from '../services/email.service';
+import cloudinaryService from '../services/cloudinary.service';
+
 
 /**
  * Get all users with pagination and filters
@@ -282,5 +284,137 @@ export const getUserStats = asyncHandler(
       },
       'User statistics retrieved successfully'
     );
+  }
+);
+
+/**
+ * Upload user avatar
+ */
+export const uploadUserAvatar = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    
+    // Validate ID parameter
+    if (!id || id === 'undefined' || id === 'null') {
+      throw new BadRequestError('User ID is required');
+    }
+
+    // Validate ID format
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new BadRequestError('Invalid User ID format');
+    }
+
+    // Check if file was uploaded
+    if (!req.file) {
+      throw new BadRequestError('No file uploaded');
+    }
+
+    // Find user
+    const user = await userService.findById(id);
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    try {
+      // Upload avatar to Cloudinary
+      const uploadResult = await cloudinaryService.uploadAvatar(
+        req.file.buffer,
+        req.file.originalname
+      );
+
+      // Delete old avatar if exists
+      if (user.avatar) {
+        try {
+          // Extract public_id from Cloudinary URL
+          const urlParts = user.avatar.split('/');
+          const publicIdWithExt = urlParts.slice(-2).join('/');
+          const publicId = publicIdWithExt.split('.')[0];
+          await cloudinaryService.deleteFile(publicId, 'image');
+        } catch (deleteError) {
+          logger.warn(`Failed to delete old avatar for user ${id}:`, deleteError);
+          // Continue even if old avatar deletion fails
+        }
+      }
+
+      // Update user with new avatar URL
+      await userService.update(id, {
+        avatar: uploadResult.url,
+        updatedAt: new Date(),
+      } as any);
+
+      // Get updated user
+      const updatedUser = await userService.findById(id);
+
+      logger.info(`Avatar uploaded for user: ${user.email}`);
+
+      successResponse(
+        res,
+        {
+          user: updatedUser,
+          avatarUrl: uploadResult.url,
+        },
+        'Avatar uploaded successfully'
+      );
+    } catch (error: any) {
+      logger.error(`Avatar upload failed for user ${id}:`, error);
+      throw new BadRequestError(
+        `Failed to upload avatar: ${error.message || 'Unknown error'}`
+      );
+    }
+  }
+);
+
+/**
+ * Delete user avatar
+ */
+export const deleteUserAvatar = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    
+    // Validate ID parameter
+    if (!id || id === 'undefined' || id === 'null') {
+      throw new BadRequestError('User ID is required');
+    }
+
+    // Validate ID format
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new BadRequestError('Invalid User ID format');
+    }
+
+    // Find user
+    const user = await userService.findById(id);
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    if (!user.avatar) {
+      throw new BadRequestError('User does not have an avatar');
+    }
+
+    try {
+      // Extract public_id from Cloudinary URL and delete
+      const urlParts = user.avatar.split('/');
+      const publicIdWithExt = urlParts.slice(-2).join('/');
+      const publicId = publicIdWithExt.split('.')[0];
+      await cloudinaryService.deleteFile(publicId, 'image');
+
+      // Update user to remove avatar URL
+      await userService.update(id, {
+        avatar: '',
+        updatedAt: new Date(),
+      } as any);
+
+      // Get updated user
+      const updatedUser = await userService.findById(id);
+
+      logger.info(`Avatar deleted for user: ${user.email}`);
+
+      successResponse(res, updatedUser, 'Avatar deleted successfully');
+    } catch (error: any) {
+      logger.error(`Avatar deletion failed for user ${id}:`, error);
+      throw new BadRequestError(
+        `Failed to delete avatar: ${error.message || 'Unknown error'}`
+      );
+    }
   }
 );
