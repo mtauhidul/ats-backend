@@ -17,6 +17,7 @@
     "test:firestore": "ts-node scripts/test-firestore.ts",
     "lint": "eslint src/**/*.ts",
     "seed": "ts-node scripts/seed.ts",
+    "seed:client": "ts-node scripts/seed-dummy-client.ts",
     "migrate": "ts-node scripts/migrate.ts",
     "analyze:queries": "ts-node scripts/analyze-slow-queries.ts",
     "cleanup:data": "ts-node scripts/run-data-cleanup.ts"
