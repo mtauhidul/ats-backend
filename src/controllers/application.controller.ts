@@ -4,6 +4,7 @@ import {
   candidateService, 
   jobService, 
   pipelineService,
+  userService,
   IApplication 
 } from '../services/firestore';
 import openaiService from '../services/openai.service';
@@ -123,8 +124,75 @@ export const createApplication = asyncHandler(
       logger.warn('No resume text provided for validation');
     }
 
+    // Prepare application data with additional fields
+    const applicationData: any = { ...data };
+
+    // Set appliedAt timestamp if not provided
+    if (!applicationData.appliedAt) {
+      applicationData.appliedAt = new Date();
+    }
+
+    // Calculate years of experience from parsed data
+    if (data.parsedData?.experience && Array.isArray(data.parsedData.experience)) {
+      let totalMonths = 0;
+      
+      data.parsedData.experience.forEach((exp: any) => {
+        const duration = exp.duration || '';
+        
+        // Try to extract years from text like "2 years", "3+ years"
+        const yearMatch = duration.match(/(\d+)\+?\s*years?/i);
+        if (yearMatch) {
+          totalMonths += parseInt(yearMatch[1]) * 12;
+          return;
+        }
+        
+        // Try to parse date ranges like "July 2023 - October 2025"
+        const dateRangeMatch = duration.match(/([a-z]+)\s+(\d{4})\s*[-–—]\s*([a-z]+)?\s*(\d{4}|present|current)/i);
+        if (dateRangeMatch) {
+          const [, startMonth, startYear, endMonth, endYear] = dateRangeMatch;
+          
+          const monthMap: Record<string, number> = {
+            jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2,
+            apr: 3, april: 3, may: 4, jun: 5, june: 5, jul: 6, july: 6,
+            aug: 7, august: 7, sep: 8, sept: 8, september: 8,
+            oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11
+          };
+          
+          const startMonthNum = monthMap[startMonth.toLowerCase()] ?? 0;
+          const startYearNum = parseInt(startYear);
+          
+          let endMonthNum: number;
+          let endYearNum: number;
+          
+          if (endYear.toLowerCase() === 'present' || endYear.toLowerCase() === 'current') {
+            const now = new Date();
+            endMonthNum = now.getMonth();
+            endYearNum = now.getFullYear();
+          } else {
+            endMonthNum = endMonth ? (monthMap[endMonth.toLowerCase()] ?? 11) : 11;
+            endYearNum = parseInt(endYear);
+          }
+          
+          const months = (endYearNum - startYearNum) * 12 + (endMonthNum - startMonthNum);
+          totalMonths += Math.max(0, months);
+          return;
+        }
+        
+        // If contains "present" or "current", assume at least 1 year
+        if (duration.toLowerCase().includes('present') || duration.toLowerCase().includes('current')) {
+          totalMonths += 12;
+        }
+      });
+      
+      const years = Math.round(totalMonths / 12);
+      if (years > 0) {
+        applicationData.yearsOfExperience = years;
+        logger.info(`Calculated years of experience: ${years} years`);
+      }
+    }
+
     // Create application
-    const applicationId = await applicationService.create(data as any);
+    const applicationId = await applicationService.create(applicationData);
     const application = await applicationService.findById(applicationId);
 
     if (!application) {
@@ -207,10 +275,53 @@ export const getApplications = asyncHandler(
     const skip = (page - 1) * limit;
     const applications = allApplications.slice(skip, skip + limit);
 
+    // Populate reviewedBy user information
+    const reviewerIds = applications
+      .map((app: any) => app.reviewedBy)
+      .filter((id: any) => id && typeof id === 'string');
+    
+    const uniqueReviewerIds = [...new Set(reviewerIds)];
+    
+    let reviewersMap = new Map();
+    if (uniqueReviewerIds.length > 0) {
+      try {
+        const reviewers = await Promise.all(
+          uniqueReviewerIds.map(id => userService.findById(id as string))
+        );
+        reviewersMap = new Map(
+          reviewers
+            .filter(reviewer => reviewer !== null)
+            .map(reviewer => [
+              reviewer!.id,
+              {
+                id: reviewer!.id,
+                _id: reviewer!.id,
+                firstName: (reviewer as any).firstName,
+                lastName: (reviewer as any).lastName,
+                email: reviewer!.email,
+              }
+            ])
+        );
+      } catch (error) {
+        logger.warn('Failed to populate reviewers:', error);
+      }
+    }
+
+    // Replace reviewedBy ID with populated user object
+    const populatedApplications = applications.map((app: any) => {
+      if (app.reviewedBy && reviewersMap.has(app.reviewedBy)) {
+        return {
+          ...app,
+          reviewedBy: reviewersMap.get(app.reviewedBy),
+        };
+      }
+      return app;
+    });
+
     successResponse(
       res,
       {
-        applications: applications.map(transformApplication),
+        applications: populatedApplications.map(transformApplication),
         pagination,
       },
       'Applications retrieved successfully'
@@ -411,10 +522,16 @@ export const approveApplication = asyncHandler(
 
     // Debug: Log pipeline details
     if (pipeline) {
+      // Convert stages from object to array if needed (Firestore serialization issue)
+      if (pipeline.stages && !Array.isArray(pipeline.stages) && typeof pipeline.stages === 'object') {
+        pipeline.stages = Object.values(pipeline.stages);
+      }
+      
       console.log('=== PIPELINE DEBUG ===');
       console.log('Pipeline ID:', pipeline.id);
       console.log('Pipeline Name:', pipeline.name);
       console.log('Has stages:', !!pipeline.stages);
+      console.log('Stages is array:', Array.isArray(pipeline.stages));
       console.log('Stages count:', pipeline.stages?.length || 0);
       if (pipeline.stages && pipeline.stages.length > 0) {
         console.log('First stage:', JSON.stringify({
@@ -429,21 +546,41 @@ export const approveApplication = asyncHandler(
     // Perform AI scoring
     logger.info(`Scoring candidate against job requirements...`);
     
-    // Prepare parsed data for scoring
+    // Prepare parsed data for scoring with array conversions
+    const rawParsedData = (application as any).parsedData || {};
+    
+    // Helper function to ensure array format
+    const ensureArray = (data: any): any[] => {
+      if (!data) return [];
+      if (Array.isArray(data)) return data;
+      if (typeof data === 'object') return Object.values(data);
+      return [];
+    };
+    
     const parsedDataForScoring: any = {
-      summary: (application as any).parsedData?.summary,
-      skills: (application as any).parsedData?.skills,
-      experience: (application as any).parsedData?.experience,
-      education: (application as any).parsedData?.education,
-      certifications: (application as any).parsedData?.certifications,
-      languages: (application as any).parsedData?.languages,
+      summary: rawParsedData.summary,
+      skills: ensureArray(rawParsedData.skills),
+      experience: ensureArray(rawParsedData.experience),
+      education: ensureArray(rawParsedData.education),
+      certifications: ensureArray(rawParsedData.certifications),
+      languages: ensureArray(rawParsedData.languages),
       extractedText: '',
     };
+
+    // Ensure requirements is an array (handle Firestore serialization)
+    let jobRequirements: string[] = [];
+    if (job.requirements) {
+      if (Array.isArray(job.requirements)) {
+        jobRequirements = job.requirements;
+      } else if (typeof job.requirements === 'object') {
+        jobRequirements = Object.values(job.requirements);
+      }
+    }
 
     const aiScore = await openaiService.scoreCandidate(
       parsedDataForScoring,
       job.description || '',
-      job.requirements || []
+      jobRequirements
     );
 
     // Debug: Log parsedData before creating candidate
@@ -559,6 +696,20 @@ export const approveApplication = asyncHandler(
         emailsReceived: 0,
       }],
     };
+
+    // Copy video intro fields if they exist
+    if ((application as any).videoIntroUrl) {
+      candidateData.videoIntroUrl = (application as any).videoIntroUrl;
+    }
+    if ((application as any).videoIntroFilename) {
+      candidateData.videoIntroFilename = (application as any).videoIntroFilename;
+    }
+    if ((application as any).videoIntroDuration) {
+      candidateData.videoIntroDuration = (application as any).videoIntroDuration;
+    }
+    if ((application as any).videoIntroFileSize) {
+      candidateData.videoIntroFileSize = (application as any).videoIntroFileSize;
+    }
 
     // Copy parsed resume data from application if it exists
     if ((application as any).parsedData) {

@@ -8,6 +8,7 @@ import {
   updateClient,
   deleteClient,
   getClientStats,
+  addCommunicationNote,
 } from '../controllers/client.controller';
 import {
   createClientSchema,
@@ -88,6 +89,16 @@ router.patch(
   requireRole('admin'),
   validate(updateClientSchema),
   updateClient
+);
+
+/**
+ * @route   POST /api/clients/:id/notes
+ * @desc    Add communication note to client
+ * @access  All authenticated users
+ */
+router.post(
+  '/:id/notes',
+  addCommunicationNote
 );
 
 /**

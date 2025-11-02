@@ -791,9 +791,16 @@ export const updateProfile = asyncHandler(
       updates.department = department;
       changes.push('Department updated');
     }
+    // Avatar should only be updated through the dedicated upload endpoint
+    // Do not accept avatar data in profile updates to avoid Firestore size limits
     if (avatar !== undefined && avatar !== user.avatar) {
-      updates.avatar = avatar;
-      changes.push('Profile picture updated');
+      // Only allow avatar URL updates (not raw data)
+      if (typeof avatar === 'string' && (avatar.startsWith('http://') || avatar.startsWith('https://') || avatar === '')) {
+        updates.avatar = avatar;
+        changes.push('Profile picture updated');
+      } else {
+        throw new BadRequestError('Avatar must be uploaded through the avatar upload endpoint (POST /api/users/:id/avatar)');
+      }
     }
 
     // Update user if there are changes

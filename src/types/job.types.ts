@@ -15,7 +15,7 @@ export const createJobSchema = z.object({
     location: z.string().min(1, 'Location is required'),
     locationType: z.enum(['onsite', 'hybrid', 'remote']),
     jobType: z.enum(['full_time', 'part_time', 'contract', 'internship']),
-    experienceLevel: z.enum(['entry', 'mid', 'senior', 'lead', 'executive']),
+    experienceLevel: z.enum(['entry', 'junior', 'mid', 'senior', 'lead', 'executive']),
     salaryRange: z.object({
       min: z.number().positive().optional(),
       max: z.number().positive().optional(),
@@ -50,7 +50,7 @@ export const updateJobSchema = z.object({
     location: z.string().optional(),
     locationType: z.enum(['onsite', 'hybrid', 'remote']).optional(),
     jobType: z.enum(['full_time', 'part_time', 'contract', 'internship']).optional(),
-    experienceLevel: z.enum(['entry', 'mid', 'senior', 'lead', 'executive']).optional(),
+    experienceLevel: z.enum(['entry', 'junior', 'mid', 'senior', 'lead', 'executive']).optional(),
     salaryRange: z.object({
       min: z.number().positive().optional(),
       max: z.number().positive().optional(),
@@ -79,7 +79,7 @@ export const listJobsSchema = z.object({
     status: z.enum(['draft', 'open', 'closed', 'on_hold']).optional(),
     jobType: z.enum(['full_time', 'part_time', 'contract', 'internship']).optional(),
     locationType: z.enum(['onsite', 'hybrid', 'remote']).optional(),
-    experienceLevel: z.enum(['entry', 'mid', 'senior', 'lead', 'executive']).optional(),
+    experienceLevel: z.enum(['entry', 'junior', 'mid', 'senior', 'lead', 'executive']).optional(),
     search: z.string().optional(),
     sortBy: z.string().default('createdAt'),
     sortOrder: z.enum(['asc', 'desc']).default('desc'),

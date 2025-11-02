@@ -97,10 +97,22 @@ export const getPipelines = asyncHandler(
     const skip = (page - 1) * limit;
     const pipelines = allPipelines.slice(skip, skip + limit);
 
+    // Ensure stages is an array for each pipeline (handle Firestore serialization)
+    const pipelinesWithArrayStages = pipelines.map((pipeline: any) => {
+      let stages = pipeline.stages;
+      if (stages && !Array.isArray(stages) && typeof stages === 'object') {
+        stages = Object.values(stages);
+      }
+      return {
+        ...pipeline,
+        stages,
+      };
+    });
+
     successResponse(
       res,
       {
-        pipelines,
+        pipelines: pipelinesWithArrayStages,
         pagination,
       },
       'Pipelines retrieved successfully'
@@ -125,10 +137,17 @@ export const getPipelineById = asyncHandler(
     const allJobs = await jobService.find([]);
     const jobCount = allJobs.filter((job: any) => job.pipelineId === id).length;
 
+    // Ensure stages is an array (handle Firestore serialization)
+    let stages = (pipeline as any).stages;
+    if (stages && !Array.isArray(stages) && typeof stages === 'object') {
+      stages = Object.values(stages);
+    }
+
     successResponse(
       res,
       {
         ...pipeline,
+        stages,
         jobCount,
       },
       'Pipeline retrieved successfully'

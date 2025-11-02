@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { jobService, pipelineService, candidateService, applicationService } from "../services/firestore";
+import { jobService, pipelineService, candidateService, applicationService, categoryService, clientService } from "../services/firestore";
 import {
   BulkUpdateJobStatusInput,
   CreateJobInput,
@@ -170,10 +170,75 @@ export const getJobs = asyncHandler(
       };
     });
 
+    // Populate categories for all jobs
+    const allCategoryIds = new Set<string>();
+    const allClientIds = new Set<string>();
+    
+    jobsWithStats.forEach((job: any) => {
+      if (job.categoryIds && Array.isArray(job.categoryIds)) {
+        job.categoryIds.forEach((id: string) => allCategoryIds.add(id));
+      }
+      if (job.clientId) {
+        allClientIds.add(job.clientId);
+      }
+    });
+
+    // Fetch all unique categories
+    const categoriesMap = new Map();
+    if (allCategoryIds.size > 0) {
+      const categories = await categoryService.find([]);
+      categories.forEach((cat: any) => {
+        categoriesMap.set(cat.id, cat);
+      });
+    }
+
+    // Fetch all unique clients
+    const clientsMap = new Map();
+    if (allClientIds.size > 0) {
+      console.log('📋 Client IDs to fetch:', Array.from(allClientIds));
+      const clients = await clientService.find([]);
+      console.log('📋 Clients fetched:', clients.length);
+      console.log('📋 First client:', clients[0]);
+      clients.forEach((client: any) => {
+        clientsMap.set(client.id, client);
+      });
+      console.log('📋 Clients map size:', clientsMap.size);
+    }
+
+    // Replace category IDs and client IDs with populated objects
+    const jobsWithPopulatedData = jobsWithStats.map((job: any) => {
+      const result: any = { ...job };
+      
+      // Populate categories
+      if (job.categoryIds && Array.isArray(job.categoryIds)) {
+        const populatedCategories = job.categoryIds
+          .map((id: string) => categoriesMap.get(id))
+          .filter((cat: any) => cat !== undefined);
+        result.categoryIds = populatedCategories;
+      }
+      
+      // Populate client
+      if (job.clientId) {
+        const client = clientsMap.get(job.clientId);
+        console.log(`🔍 Job "${job.title}" clientId:`, job.clientId);
+        console.log(`🔍 Found client:`, client ? client.companyName : 'NOT FOUND');
+        if (client) {
+          result.clientId = {
+            id: client.id,
+            _id: client.id,
+            companyName: client.companyName,
+            logo: client.logo,
+          };
+        }
+      }
+      
+      return result;
+    });
+
     successResponse(
       res,
       {
-        jobs: jobsWithStats,
+        jobs: jobsWithPopulatedData,
         pagination,
       },
       "Jobs retrieved successfully"
@@ -209,10 +274,40 @@ export const getJobById = asyncHandler(
       c.status === "hired"
     ).length;
 
+    // Populate categories
+    let populatedCategoryIds = job.categoryIds;
+    if (job.categoryIds && Array.isArray(job.categoryIds) && job.categoryIds.length > 0) {
+      const categories = await categoryService.find([]);
+      const categoriesMap = new Map();
+      categories.forEach((cat: any) => {
+        categoriesMap.set(cat.id, cat);
+      });
+      
+      populatedCategoryIds = job.categoryIds
+        .map((id: string) => categoriesMap.get(id))
+        .filter((cat: any) => cat !== undefined);
+    }
+
+    // Populate client
+    let populatedClient: any = job.clientId;
+    if (job.clientId && typeof job.clientId === 'string') {
+      const client = await clientService.findById(job.clientId);
+      if (client) {
+        populatedClient = {
+          id: client.id,
+          _id: client.id,
+          companyName: (client as any).companyName,
+          logo: (client as any).logo,
+        };
+      }
+    }
+
     successResponse(
       res,
       {
         ...job,
+        categoryIds: populatedCategoryIds,
+        clientId: populatedClient,
         statistics: {
           totalCandidates,
           activeCandidates,

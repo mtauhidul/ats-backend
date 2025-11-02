@@ -62,18 +62,33 @@ export class FirestoreBaseService<T extends Record<string, any>> {
   protected convertTimestamps(data: any): any {
     if (!data) return data;
 
-    const converted: any = { ...data };
-    Object.keys(converted).forEach((key) => {
-      if (converted[key] instanceof Timestamp) {
-        converted[key] = converted[key].toDate();
-      } else if (
-        typeof converted[key] === "object" &&
-        converted[key] !== null
-      ) {
-        converted[key] = this.convertTimestamps(converted[key]);
-      }
-    });
-    return converted;
+    // Handle arrays - MUST check before object spread
+    if (Array.isArray(data)) {
+      return data.map((item) => this.convertTimestamps(item));
+    }
+
+    // Handle objects (but not arrays, which were handled above)
+    if (typeof data === "object" && data !== null) {
+      const converted: any = {};
+      Object.keys(data).forEach((key) => {
+        if (data[key] instanceof Timestamp) {
+          converted[key] = data[key].toDate();
+        } else if (Array.isArray(data[key])) {
+          // Preserve arrays
+          converted[key] = data[key].map((item: any) => this.convertTimestamps(item));
+        } else if (
+          typeof data[key] === "object" &&
+          data[key] !== null
+        ) {
+          converted[key] = this.convertTimestamps(data[key]);
+        } else {
+          converted[key] = data[key];
+        }
+      });
+      return converted;
+    }
+
+    return data;
   }
 
   /**
@@ -82,18 +97,33 @@ export class FirestoreBaseService<T extends Record<string, any>> {
   protected convertDatesToTimestamps(data: any): any {
     if (!data) return data;
 
-    const converted: any = { ...data };
-    Object.keys(converted).forEach((key) => {
-      if (converted[key] instanceof Date) {
-        converted[key] = Timestamp.fromDate(converted[key]);
-      } else if (
-        typeof converted[key] === "object" &&
-        converted[key] !== null
-      ) {
-        converted[key] = this.convertDatesToTimestamps(converted[key]);
-      }
-    });
-    return converted;
+    // Handle arrays - MUST check before object spread
+    if (Array.isArray(data)) {
+      return data.map((item) => this.convertDatesToTimestamps(item));
+    }
+
+    // Handle objects (but not arrays, which were handled above)
+    if (typeof data === "object" && data !== null) {
+      const converted: any = {};
+      Object.keys(data).forEach((key) => {
+        if (data[key] instanceof Date) {
+          converted[key] = Timestamp.fromDate(data[key]);
+        } else if (Array.isArray(data[key])) {
+          // Preserve arrays
+          converted[key] = data[key].map((item: any) => this.convertDatesToTimestamps(item));
+        } else if (
+          typeof data[key] === "object" &&
+          data[key] !== null
+        ) {
+          converted[key] = this.convertDatesToTimestamps(data[key]);
+        } else {
+          converted[key] = data[key];
+        }
+      });
+      return converted;
+    }
+
+    return data;
   }
 
   /**
@@ -229,10 +259,22 @@ export class FirestoreBaseService<T extends Record<string, any>> {
       }
 
       const snapshot: QuerySnapshot = await query.get();
-      return snapshot.docs.map((doc) => ({
+      const docs = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...this.convertTimestamps(doc.data()),
       })) as (T & { id: string })[];
+      
+      // Debug logging for categories collection
+      if (this.collectionPath === 'categories') {
+        console.log(`📊 find() in ${this.collectionPath}:`, {
+          snapshotSize: snapshot.size,
+          docsCount: docs.length,
+          isArray: Array.isArray(docs),
+          firstDoc: docs[0] || null
+        });
+      }
+      
+      return docs;
     } catch (error) {
       logger.error(
         `Error finding documents with filters in ${this.collectionPath}:`,

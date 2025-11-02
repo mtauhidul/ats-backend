@@ -26,7 +26,17 @@ export const createTag = asyncHandler(
 export const getTags = asyncHandler(
   async (_req: Request, res: Response): Promise<void> => {
     let tags = await tagService.find([]);
+    
+    // Ensure tags is an array (handle Firestore serialization)
+    if (!Array.isArray(tags) && typeof tags === 'object') {
+      tags = Object.values(tags);
+    }
+    
     tags = tags.sort((a: any, b: any) => a.name.localeCompare(b.name));
+    
+    console.log('Tags being returned:', tags.length, 'tags');
+    console.log('First tag:', tags[0]);
+    
     successResponse(res, tags, 'Tags retrieved successfully');
   }
 );

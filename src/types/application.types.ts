@@ -6,13 +6,13 @@ import { z } from 'zod';
 
 export const createApplicationSchema = z.object({
   body: z.object({
-    jobId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid job ID format').optional(),
-    clientId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid client ID format').optional(),
+    jobId: z.string().min(1, 'Invalid job ID format').optional(),
+    clientId: z.string().min(1, 'Invalid client ID format').optional(),
     source: z.enum(['manual', 'direct_apply', 'email_automation'], {
       errorMap: () => ({ message: 'Source must be manual, direct_apply, or email_automation' }),
     }),
     sourceEmail: z.string().email('Invalid source email').optional(),
-    sourceEmailAccountId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid email account ID').optional(),
+    sourceEmailAccountId: z.string().min(1, 'Invalid email account ID').optional(),
     firstName: z.string().min(1, 'First name is required'),
     lastName: z.string().min(1, 'Last name is required'),
     email: z.string().email('Invalid email address'),
@@ -58,13 +58,13 @@ export const updateApplicationSchema = z.object({
     internalNotes: z.string().optional(),
   }),
   params: z.object({
-    id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ID format'),
+    id: z.string().min(1, 'Invalid ID format'),
   }),
 });
 
 export const applicationIdSchema = z.object({
   params: z.object({
-    id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ID format'),
+    id: z.string().min(1, 'Invalid ID format'),
   }),
 });
 
@@ -72,8 +72,8 @@ export const listApplicationsSchema = z.object({
   query: z.object({
     page: z.string().optional().transform(val => val ? parseInt(val, 10) : 1),
     limit: z.string().optional().transform(val => val ? parseInt(val, 10) : 10),
-    jobId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
-    clientId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
+    jobId: z.string().min(1).optional(),
+    clientId: z.string().min(1).optional(),
     status: z.enum(['pending', 'reviewing', 'shortlisted', 'rejected', 'approved']).optional(),
     source: z.enum(['manual', 'direct_apply', 'email_automation']).optional(),
     search: z.string().optional(),
@@ -84,19 +84,20 @@ export const listApplicationsSchema = z.object({
 
 export const approveApplicationSchema = z.object({
   body: z.object({
-    jobId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid job ID format'),
-    assignToPipeline: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid pipeline ID').optional(),
+    jobId: z.string().min(1, 'Job ID is required'),
+    clientId: z.string().min(1, 'Client ID is required').optional(),
+    assignToPipeline: z.string().min(1).optional(),
     initialStage: z.string().optional(),
     notes: z.string().optional(),
   }),
   params: z.object({
-    id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ID format'),
+    id: z.string().min(1, 'Application ID is required'),
   }),
 });
 
 export const bulkUpdateStatusSchema = z.object({
   body: z.object({
-    applicationIds: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/)).min(1, 'At least one application ID required'),
+    applicationIds: z.array(z.string().min(1)).min(1, 'At least one application ID required'),
     status: z.enum(['pending', 'reviewing', 'shortlisted', 'rejected', 'approved']),
     notes: z.string().optional(),
   }),

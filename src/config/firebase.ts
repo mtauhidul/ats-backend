@@ -79,4 +79,14 @@ export function getFirebaseAuth() {
   return getAuth(app);
 }
 
+/**
+ * Get Firestore instance
+ */
+export function getFirestoreDb() {
+  if (!db) {
+    initializeFirebase();
+  }
+  return db;
+}
+
 // No cleanup needed - Firebase handles it automatically

@@ -3,6 +3,7 @@ import { sendAssignmentEmail } from "../services/email.service";
 import {
   candidateService,
   jobService,
+  clientService,
   pipelineService,
   userService,
 } from "../services/firestore";
@@ -215,10 +216,89 @@ export const getCandidates = asyncHandler(
       return candidate;
     });
 
+    // Populate job information with client data
+    const jobIds = [
+      ...new Set(
+        candidatesWithStage
+          .flatMap((c: any) => c.jobIds || [])
+          .filter((id: any) => id && typeof id === 'string')
+      ),
+    ];
+
+    let jobsMap = new Map();
+    if (jobIds.length > 0) {
+      try {
+        const jobs = await Promise.all(
+          (jobIds as string[]).map(id => jobService.findById(id))
+        );
+        
+        // Get all unique client IDs from jobs
+        const clientIds = [
+          ...new Set(
+            jobs
+              .filter(job => job !== null && (job as any).clientId)
+              .map(job => (job as any).clientId)
+              .filter((id: any) => id && typeof id === 'string')
+          ),
+        ];
+
+        // Fetch all clients
+        let clientsMap = new Map();
+        if (clientIds.length > 0) {
+          const clients = await Promise.all(
+            (clientIds as string[]).map(id => clientService.findById(id))
+          );
+          clientsMap = new Map(
+            clients
+              .filter(client => client !== null)
+              .map(client => [
+                client!.id,
+                {
+                  id: client!.id,
+                  _id: client!.id,
+                  companyName: (client as any).companyName,
+                  logo: (client as any).logo,
+                }
+              ])
+          );
+        }
+
+        // Create jobs map with populated clients
+        jobsMap = new Map(
+          jobs
+            .filter(job => job !== null)
+            .map(job => {
+              const jobWithClient = { ...job };
+              if ((job as any).clientId && clientsMap.has((job as any).clientId)) {
+                (jobWithClient as any).clientId = clientsMap.get((job as any).clientId);
+              }
+              return [job!.id, jobWithClient];
+            })
+        );
+      } catch (error) {
+        logger.warn('Failed to populate jobs with clients:', error);
+      }
+    }
+
+    // Replace jobIds with populated job objects (first job only for display)
+    const candidatesWithJobs = candidatesWithStage.map((candidate: any) => {
+      if (candidate.jobIds && candidate.jobIds.length > 0) {
+        const firstJobId = candidate.jobIds[0];
+        if (jobsMap.has(firstJobId)) {
+          // Replace first jobId with populated job object
+          return {
+            ...candidate,
+            jobIds: [jobsMap.get(firstJobId), ...candidate.jobIds.slice(1)],
+          };
+        }
+      }
+      return candidate;
+    });
+
     successResponse(
       res,
       {
-        candidates: candidatesWithStage,
+        candidates: candidatesWithJobs,
         pagination,
       },
       "Candidates retrieved successfully"
@@ -310,7 +390,34 @@ export const updateCandidate = asyncHandler(
     await candidateService.update(id, updates as any);
 
     // Fetch updated candidate
-    const updatedCandidate = await candidateService.findById(id);
+    let updatedCandidate = await candidateService.findById(id);
+
+    // Populate job and client information (same logic as getCandidates)
+    if (updatedCandidate && (updatedCandidate as any).jobIds && (updatedCandidate as any).jobIds.length > 0) {
+      try {
+        const firstJobId = (updatedCandidate as any).jobIds[0];
+        const job = await jobService.findById(firstJobId);
+        
+        if (job && (job as any).clientId) {
+          const client = await clientService.findById((job as any).clientId);
+          
+          if (client) {
+            // Populate client in job
+            (job as any).clientId = {
+              id: client.id,
+              _id: client.id,
+              companyName: (client as any).companyName,
+              logo: (client as any).logo,
+            };
+          }
+          
+          // Replace first jobId with populated job object
+          (updatedCandidate as any).jobIds = [job, ...(updatedCandidate as any).jobIds.slice(1)];
+        }
+      } catch (error) {
+        logger.warn('Failed to populate job/client for updated candidate:', error);
+      }
+    }
 
     logger.info(`Candidate updated: ${updatedCandidate?.email}`);
 

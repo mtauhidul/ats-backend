@@ -48,6 +48,11 @@ export interface IApplication {
   validationScore?: number;
   validationReason?: string;
 
+  // Candidate Details (extracted or calculated)
+  yearsOfExperience?: number;
+  currentTitle?: string;
+  currentCompany?: string;
+
   // Application Details
   status: "pending" | "reviewing" | "shortlisted" | "rejected" | "approved";
   source: "manual" | "direct_apply" | "email_automation";
