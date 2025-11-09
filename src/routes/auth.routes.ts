@@ -24,6 +24,7 @@ import { Request, Response, NextFunction } from 'express';
 const validateRequest = (req: Request, res: Response, next: NextFunction): void => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
+    console.log('Validation errors:', errors.array());
     res.status(400).json({ errors: errors.array() });
     return;
   }
@@ -40,7 +41,7 @@ const router = Router();
 router.post(
   '/register-first-admin',
   [
-    body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+    body('email').isEmail().withMessage('Valid email is required'),
     body('firstName').trim().notEmpty().withMessage('First name is required'),
     body('lastName').trim().notEmpty().withMessage('Last name is required'),
     body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
@@ -53,7 +54,7 @@ router.post(
 router.post(
   '/login',
   [
-    body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+    body('email').isEmail().withMessage('Valid email is required'),
     body('password').notEmpty().withMessage('Password is required'),
   ],
   validateRequest,
@@ -63,7 +64,7 @@ router.post(
 // Request magic link (passwordless login)
 router.post(
   '/magic-link',
-  [body('email').isEmail().normalizeEmail().withMessage('Valid email is required')],
+  [body('email').isEmail().withMessage('Valid email is required')],
   validateRequest,
   requestMagicLink
 );
@@ -92,7 +93,7 @@ router.post(
 // Request password reset
 router.post(
   '/forgot-password',
-  [body('email').isEmail().normalizeEmail().withMessage('Valid email is required')],
+  [body('email').isEmail().withMessage('Valid email is required')],
   validateRequest,
   forgotPassword
 );
@@ -167,7 +168,7 @@ router.post(
   authenticate,
   requireAdmin,
   [
-    body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+    body('email').isEmail().withMessage('Valid email is required'),
     body('firstName').notEmpty().withMessage('First name is required'),
     body('lastName').notEmpty().withMessage('Last name is required'),
     body('role')

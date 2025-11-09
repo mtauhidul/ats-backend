@@ -106,18 +106,23 @@ export class FirestoreBaseService<T extends Record<string, any>> {
     if (typeof data === "object" && data !== null) {
       const converted: any = {};
       Object.keys(data).forEach((key) => {
-        if (data[key] instanceof Date) {
-          converted[key] = Timestamp.fromDate(data[key]);
-        } else if (Array.isArray(data[key])) {
+        const value = data[key];
+        
+        // Skip Firestore sentinel values (FieldValue.serverTimestamp(), etc.)
+        // These have no enumerable keys and specific constructor names
+        if (value && typeof value === 'object' && 
+            Object.keys(value).length === 0 && 
+            value.constructor?.name?.includes('Transform')) {
+          converted[key] = value;
+        } else if (value instanceof Date) {
+          converted[key] = Timestamp.fromDate(value);
+        } else if (Array.isArray(value)) {
           // Preserve arrays
-          converted[key] = data[key].map((item: any) => this.convertDatesToTimestamps(item));
-        } else if (
-          typeof data[key] === "object" &&
-          data[key] !== null
-        ) {
-          converted[key] = this.convertDatesToTimestamps(data[key]);
+          converted[key] = value.map((item: any) => this.convertDatesToTimestamps(item));
+        } else if (typeof value === "object" && value !== null) {
+          converted[key] = this.convertDatesToTimestamps(value);
         } else {
-          converted[key] = data[key];
+          converted[key] = value;
         }
       });
       return converted;
@@ -132,13 +137,15 @@ export class FirestoreBaseService<T extends Record<string, any>> {
   async create(data: Omit<T, "id">): Promise<string> {
     try {
       const timestamp = FieldValue.serverTimestamp();
+      const docRef = this.getCollection().doc(); // Generate ID first
       const docData = this.convertDatesToTimestamps({
         ...data,
+        id: docRef.id, // Add id field
         createdAt: timestamp,
         updatedAt: timestamp,
       });
 
-      const docRef = await this.getCollection().add(docData);
+      await docRef.set(docData);
       logger.debug(`Document created in ${this.collectionPath}:`, docRef.id);
       return docRef.id;
     } catch (error) {
@@ -155,6 +162,7 @@ export class FirestoreBaseService<T extends Record<string, any>> {
       const timestamp = FieldValue.serverTimestamp();
       const docData = this.convertDatesToTimestamps({
         ...data,
+        id, // Add id field
         createdAt: timestamp,
         updatedAt: timestamp,
       });

@@ -127,6 +127,11 @@ export const createApplication = asyncHandler(
     // Prepare application data with additional fields
     const applicationData: any = { ...data };
 
+    // Set default status if not provided
+    if (!applicationData.status) {
+      applicationData.status = 'pending';
+    }
+
     // Set appliedAt timestamp if not provided
     if (!applicationData.appliedAt) {
       applicationData.appliedAt = new Date();
@@ -802,9 +807,10 @@ export const approveApplication = asyncHandler(
     console.log('Education Count:', (candidate as any).education?.length || 0);
     console.log('========================');
 
-    // Update application status
+    // Update application status and link to candidate
     await applicationService.update(id, {
       status: 'approved',
+      candidateId: candidate.id,
       approvedAt: new Date(),
       reviewedBy: (req as any).user?.id,
     } as any);
@@ -816,6 +822,7 @@ export const approveApplication = asyncHandler(
     successResponse(
       res,
       {
+        candidateId: candidate.id,
         candidate,
         application,
       },
@@ -1032,7 +1039,11 @@ export const getDashboardAnalytics = asyncHandler(
     // Fetch all applications within date range
     const allApplications = await applicationService.find([]);
     const filteredApplications = allApplications.filter((app: any) => {
-      const createdAt = app.createdAt instanceof Date ? app.createdAt : new Date(app.createdAt);
+      // Handle createdAt or appliedAt
+      const dateField = app.createdAt || app.appliedAt;
+      if (!dateField) return false;
+      
+      const createdAt = dateField instanceof Date ? dateField : new Date(dateField);
       return createdAt >= startDate && createdAt <= endDate;
     });
 
@@ -1040,7 +1051,10 @@ export const getDashboardAnalytics = asyncHandler(
     const groupedData: Map<string, any> = new Map();
 
     filteredApplications.forEach((app: any) => {
-      const createdAt = app.createdAt instanceof Date ? app.createdAt : new Date(app.createdAt);
+      const dateField = app.createdAt || app.appliedAt;
+      if (!dateField) return;
+      
+      const createdAt = dateField instanceof Date ? dateField : new Date(dateField);
       const dateStr = createdAt.toISOString().split('T')[0]; // YYYY-MM-DD format
       const source = app.source || 'unknown';
 

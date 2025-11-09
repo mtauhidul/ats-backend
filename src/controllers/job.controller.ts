@@ -18,15 +18,56 @@ import {
 import logger from "../utils/logger";
 
 /**
+ * Sanitize job data to ensure IDs are strings, not populated objects
+ * This prevents frontend from polluting database with populated data
+ */
+function sanitizeJobData(data: any): any {
+  const sanitized = { ...data };
+  
+  // Extract clientId if it's an object
+  if (sanitized.clientId && typeof sanitized.clientId === 'object') {
+    sanitized.clientId = sanitized.clientId.id || sanitized.clientId._id;
+    logger.warn('⚠️  Sanitized clientId: was object, extracted ID');
+  }
+  
+  // Extract categoryIds if they're objects
+  if (sanitized.categoryIds && Array.isArray(sanitized.categoryIds)) {
+    const hasObjects = sanitized.categoryIds.some((cat: any) => typeof cat === 'object');
+    if (hasObjects) {
+      sanitized.categoryIds = sanitized.categoryIds.map((cat: any) =>
+        typeof cat === 'object' ? cat.id : cat
+      );
+      logger.warn('⚠️  Sanitized categoryIds: was array of objects, extracted IDs');
+    }
+  }
+  
+  // Extract tagIds if they're objects
+  if (sanitized.tagIds && Array.isArray(sanitized.tagIds)) {
+    const hasObjects = sanitized.tagIds.some((tag: any) => typeof tag === 'object');
+    if (hasObjects) {
+      sanitized.tagIds = sanitized.tagIds.map((tag: any) =>
+        typeof tag === 'object' ? tag.id : tag
+      );
+      logger.warn('⚠️  Sanitized tagIds: was array of objects, extracted IDs');
+    }
+  }
+  
+  return sanitized;
+}
+
+/**
  * Create new job posting
  */
 export const createJob = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const data: CreateJobInput = req.body;
+    
+    // Sanitize input data
+    const sanitizedData = sanitizeJobData(data);
 
     // If pipelineId provided, verify it exists
-    if (data.pipelineId) {
-      const pipeline = await pipelineService.findById(data.pipelineId);
+    if (sanitizedData.pipelineId) {
+      const pipeline = await pipelineService.findById(sanitizedData.pipelineId);
       if (!pipeline) {
         throw new NotFoundError("Pipeline not found");
       }
@@ -34,7 +75,7 @@ export const createJob = asyncHandler(
 
     // Create job
     const jobId = await jobService.create({
-      ...data,
+      ...sanitizedData,
       createdBy: req.user?.id,
     } as any);
 
@@ -326,15 +367,18 @@ export const updateJob = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
     const updates: UpdateJobInput = req.body;
+    
+    // Sanitize input data
+    const sanitizedUpdates = sanitizeJobData(updates);
 
     logger.info(`=== Updating Job ${id} ===`);
-    logger.info("Updates received:", JSON.stringify(updates, null, 2));
-    logger.info("Requirements field:", updates.requirements);
-    logger.info("Skills field:", updates.skills);
+    logger.info("Updates received:", JSON.stringify(sanitizedUpdates, null, 2));
+    logger.info("Requirements field:", sanitizedUpdates.requirements);
+    logger.info("Skills field:", sanitizedUpdates.skills);
 
     // If pipelineId is being changed, verify it exists
-    if (updates.pipelineId) {
-      const pipeline = await pipelineService.findById(updates.pipelineId);
+    if (sanitizedUpdates.pipelineId) {
+      const pipeline = await pipelineService.findById(sanitizedUpdates.pipelineId);
       if (!pipeline) {
         throw new NotFoundError("Pipeline not found");
       }
@@ -370,7 +414,7 @@ export const updateJob = asyncHandler(
 
     // Update job
     await jobService.update(id, {
-      ...updates,
+      ...sanitizedUpdates,
       updatedBy: req.user?.id,
     } as any);
 

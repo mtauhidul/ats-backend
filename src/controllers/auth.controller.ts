@@ -235,31 +235,45 @@ export const login = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { email, password } = req.body;
 
+    logger.info(`=== LOGIN REQUEST START ===`);
+    logger.info(`Request body: ${JSON.stringify(req.body)}`);
+
     // Validate required fields
     if (!email || !password) {
       throw new BadRequestError('Email and password are required');
     }
 
+    logger.info(`Login attempt for email: ${email.toLowerCase()}`);
+
     // Find user with password hash (explicitly select it)
     const user = await userService.findByEmail(email.toLowerCase());
     
     if (!user) {
+      logger.warn(`User not found for email: ${email.toLowerCase()}`);
       throw new AuthenticationError('Invalid email or password');
     }
 
+    logger.info(`User found: ${user.id}, isActive: ${user.isActive}, emailVerified: ${user.emailVerified}, hasPassword: ${!!user.passwordHash}`);
+
+    logger.info(`User found: ${user.id}, isActive: ${user.isActive}, emailVerified: ${user.emailVerified}`);
+
     // Check if user is active
     if (!user.isActive) {
+      logger.warn(`User account is deactivated: ${user.email}`);
       throw new AuthenticationError('Your account has been deactivated. Please contact an administrator.');
     }
 
     // Verify password
     const isPasswordValid = await comparePassword(password, user.passwordHash);
+    logger.info(`Password validation result: ${isPasswordValid}`);
     if (!isPasswordValid) {
+      logger.warn(`Invalid password for user: ${user.email}`);
       throw new AuthenticationError('Invalid email or password');
     }
 
     // Check if email is verified
     if (!user.emailVerified) {
+      logger.warn(`Email not verified for user: ${user.email}`);
       throw new AuthenticationError('Please verify your email before logging in');
     }
 
