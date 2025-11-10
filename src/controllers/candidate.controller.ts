@@ -372,6 +372,55 @@ export const updateCandidate = asyncHandler(
     const isAssignmentChanged =
       oldAssignedTo !== newAssignedTo && newAssignedTo !== undefined;
 
+    // Handle rejection status update - update the specific job application
+    if ((updates as any).status === 'rejected' && (req.body as any).rejectedJobId) {
+      const rejectedJobId = (req.body as any).rejectedJobId;
+      const jobApplications = (candidate as any).jobApplications || [];
+      
+      // Find and update the specific job application
+      const updatedJobApplications = jobApplications.map((app: any) => {
+        if (app.jobId === rejectedJobId || app.jobId?.toString() === rejectedJobId) {
+          return {
+            ...app,
+            status: 'rejected',
+            lastStatusChange: new Date()
+          };
+        }
+        return app;
+      });
+      
+      (updates as any).jobApplications = updatedJobApplications;
+      logger.info(`Updated job application status to rejected for job ${rejectedJobId}`);
+    }
+
+    // If currentPipelineStageId is being updated, also update jobApplications[0].currentStage
+    if ((updates as any).currentPipelineStageId) {
+      const newStageId = (updates as any).currentPipelineStageId;
+      
+      // Find the pipeline and stage name
+      const jobIds = (candidate as any).jobIds || [];
+      if (jobIds.length > 0) {
+        try {
+          const pipeline = await pipelineService.findByJobId(jobIds[0]);
+          if (pipeline && pipeline.stages) {
+            const newStage = pipeline.stages.find((s: any) => s.id === newStageId);
+            if (newStage) {
+              // Update jobApplications[0].currentStage with the stage name
+              const jobApplications = (candidate as any).jobApplications || [];
+              if (jobApplications.length > 0) {
+                jobApplications[0].currentStage = newStage.name;
+                jobApplications[0].lastStatusChange = new Date();
+                (updates as any).jobApplications = jobApplications;
+                logger.info(`Updated candidate stage to: ${newStage.name}`);
+              }
+            }
+          }
+        } catch (error) {
+          logger.warn('Failed to update jobApplications.currentStage:', error);
+        }
+      }
+    }
+
     // Check if email is being changed and if it creates a duplicate
     if (updates.email && updates.email !== candidate.email) {
       const existingCandidates = await candidateService.find([

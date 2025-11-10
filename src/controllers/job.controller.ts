@@ -86,6 +86,19 @@ export const createJob = asyncHandler(
       throw new Error("Failed to create job");
     }
 
+    // Update client to add jobId to jobIds array
+    if (sanitizedData.clientId) {
+      const client = await clientService.findById(sanitizedData.clientId);
+      if (client) {
+        const jobIds = client.jobIds || [];
+        if (!jobIds.includes(jobId)) {
+          await clientService.update(sanitizedData.clientId, {
+            jobIds: [...jobIds, jobId]
+          } as any);
+        }
+      }
+    }
+
     logger.info(`Job created: ${job.title} by user ${req.user?.id}`);
 
     successResponse(res, job, "Job created successfully", 201);
@@ -412,6 +425,12 @@ export const updateJob = asyncHandler(
       }
     }
 
+    // Get old job to check clientId change
+    const oldJob = await jobService.findById(id);
+    if (!oldJob) {
+      throw new NotFoundError("Job not found");
+    }
+
     // Update job
     await jobService.update(id, {
       ...sanitizedUpdates,
@@ -423,6 +442,30 @@ export const updateJob = asyncHandler(
 
     if (!job) {
       throw new NotFoundError("Job not found");
+    }
+
+    // Handle clientId change - update both old and new clients
+    if (sanitizedUpdates.clientId && sanitizedUpdates.clientId !== oldJob.clientId) {
+      // Remove from old client
+      if (oldJob.clientId) {
+        const oldClient = await clientService.findById(oldJob.clientId);
+        if (oldClient && oldClient.jobIds) {
+          await clientService.update(oldJob.clientId, {
+            jobIds: oldClient.jobIds.filter((jId: string) => jId !== id)
+          } as any);
+        }
+      }
+      
+      // Add to new client
+      const newClient = await clientService.findById(sanitizedUpdates.clientId);
+      if (newClient) {
+        const jobIds = newClient.jobIds || [];
+        if (!jobIds.includes(id)) {
+          await clientService.update(sanitizedUpdates.clientId, {
+            jobIds: [...jobIds, id]
+          } as any);
+        }
+      }
     }
 
     logger.info(`Job updated: ${job.title}`);
@@ -455,6 +498,16 @@ export const deleteJob = asyncHandler(
     }
 
     await jobService.delete(id);
+
+    // Remove jobId from client's jobIds array
+    if (job.clientId) {
+      const client = await clientService.findById(job.clientId);
+      if (client && client.jobIds) {
+        await clientService.update(job.clientId, {
+          jobIds: client.jobIds.filter((jId: string) => jId !== id)
+        } as any);
+      }
+    }
 
     logger.info(`Job deleted: ${job.title}`);
 

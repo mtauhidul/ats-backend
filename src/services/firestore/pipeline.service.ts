@@ -15,6 +15,7 @@ export interface IPipeline {
   description?: string;
   type: "candidate" | "interview" | "custom";
   stages: IPipelineStage[];
+  jobId?: string; // Reference to the job this pipeline belongs to
   isDefault: boolean;
   isActive: boolean;
   createdBy: string;
@@ -26,6 +27,46 @@ export interface IPipeline {
 class PipelineService extends FirestoreBaseService<IPipeline> {
   constructor() {
     super("pipelines");
+  }
+
+  /**
+   * Override create to ensure all stages have unique IDs
+   */
+  async create(data: Partial<IPipeline>): Promise<string> {
+    // Ensure all stages have unique IDs
+    if (data.stages && Array.isArray(data.stages)) {
+      data.stages = data.stages.map((stage, index) => ({
+        ...stage,
+        id: stage.id || `stage_${Date.now()}_${index}`,
+      }));
+    }
+    
+    return super.create(data as Omit<IPipeline, "id">);
+  }
+
+  /**
+   * Override update to ensure any new stages have unique IDs
+   */
+  async update(id: string, data: Partial<IPipeline>): Promise<void> {
+    // Ensure all stages have unique IDs
+    if (data.stages && Array.isArray(data.stages)) {
+      data.stages = data.stages.map((stage, index) => ({
+        ...stage,
+        id: stage.id || `stage_${Date.now()}_${index}`,
+      }));
+    }
+    
+    return super.update(id, data);
+  }
+
+  /**
+   * Find pipeline by jobId
+   */
+  async findByJobId(jobId: string): Promise<IPipeline | null> {
+    const pipelines = await this.find([
+      { field: "jobId", operator: "==", value: jobId },
+    ]);
+    return pipelines.length > 0 ? pipelines[0] : null;
   }
 
   /**

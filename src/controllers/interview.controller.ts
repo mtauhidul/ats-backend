@@ -128,9 +128,16 @@ export const createInterview = asyncHandler(
     // Create Zoom meeting if requested and interview is video type
     if (data.createZoomMeeting && interview!.type === 'video') {
       try {
+        // Convert Firestore Timestamp to JavaScript Date
+        const scheduledAt = interview!.scheduledAt instanceof Date 
+          ? interview!.scheduledAt 
+          : (interview!.scheduledAt as any).toDate 
+            ? (interview!.scheduledAt as any).toDate() 
+            : new Date(interview!.scheduledAt);
+
         const zoomMeeting = await zoomService.createMeeting({
           topic: `${interview!.title} - ${candidate.firstName} ${candidate.lastName}`,
-          startTime: interview!.scheduledAt,
+          startTime: scheduledAt,
           duration: interview!.duration,
           timezone: interview!.timezone,
           agenda: interview!.description || `Interview for ${job.title}`,
@@ -355,10 +362,17 @@ export const createZoomMeeting = asyncHandler(
     const candidate = await candidateService.findById(interview.candidateId);
     const job = await jobService.findById(interview.jobId);
 
+    // Convert Firestore Timestamp to JavaScript Date
+    const scheduledAt = interview.scheduledAt instanceof Date 
+      ? interview.scheduledAt 
+      : (interview.scheduledAt as any).toDate 
+        ? (interview.scheduledAt as any).toDate() 
+        : new Date(interview.scheduledAt);
+
     // Create Zoom meeting
     const zoomMeeting = await zoomService.createMeeting({
       topic: `${interview.title} - ${candidate?.firstName} ${candidate?.lastName}`,
-      startTime: interview.scheduledAt,
+      startTime: scheduledAt,
       duration: interview.duration,
       timezone: interview.timezone,
       agenda: interview.description || `Interview for ${job?.title}`,

@@ -89,4 +89,7 @@ export function getFirestoreDb() {
   return db;
 }
 
+// Export db for scripts
+export { db };
+
 // No cleanup needed - Firebase handles it automatically

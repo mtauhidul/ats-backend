@@ -119,11 +119,11 @@ router.post(
 /**
  * @route   DELETE /api/interviews/:id
  * @desc    Delete interview
- * @access  Admin, Super Admin
+ * @access  Recruiter, Hiring Manager, Admin, Super Admin
  */
 router.delete(
   '/:id',
-  requireRole('admin'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   deleteInterview
 );
 

@@ -1,6 +1,5 @@
 import { FirestoreBaseService, QueryFilter } from './base.service';
 import logger from '../../utils/logger';
-import { config } from '../../config';
 
 export interface FirestoreCandidateData {
   // Personal Info
@@ -28,7 +27,22 @@ export interface FirestoreCandidateData {
   // Job Applications
   jobIds: string[];
   applicationIds: string[];
+  jobApplications?: Array<{
+    jobId: string;
+    applicationId?: string;
+    status: string;
+    appliedAt: Date;
+    lastStatusChange: Date;
+    currentStage?: string;
+    resumeScore?: number;
+    emailIds: string[];
+    emailsSent: number;
+    emailsReceived: number;
+  }>;
 
+  // Pipeline tracking
+  currentPipelineStageId?: string;
+  
   // Status
   status: 'active' | 'interviewing' | 'offered' | 'hired' | 'rejected' | 'withdrawn';
   currentStage?: string;
@@ -44,8 +58,8 @@ export interface FirestoreCandidateData {
  * Handles all candidate-related Firestore operations
  */
 export class CandidateFirestoreService extends FirestoreBaseService<FirestoreCandidateData> {
-  constructor(companyId: string) {
-    super(`companies/${companyId}/candidates`);
+  constructor() {
+    super('candidates');
   }
 
   /**
@@ -253,7 +267,7 @@ export class CandidateFirestoreService extends FirestoreBaseService<FirestoreCan
 }
 
 // Export singleton instance with default company ID
-export const candidateService = new CandidateFirestoreService(config.migration.defaultCompanyId);
+export const candidateService = new CandidateFirestoreService();
 
 // Export type alias for consistency
 export type ICandidate = FirestoreCandidateData;

@@ -1,6 +1,5 @@
 import { FirestoreBaseService, QueryFilter } from './base.service';
 import logger from '../../utils/logger';
-import { config } from '../../config';
 
 export interface FirestoreJobData {
   title: string;
@@ -30,6 +29,9 @@ export interface FirestoreJobData {
   priority: 'low' | 'medium' | 'high' | 'urgent';
   hiringManagerId?: string;
   recruiterIds: string[];
+  // Relations - arrays of IDs that reference other collections
+  applicationIds?: string[]; // References to Application collection
+  candidateIds?: string[]; // References to Candidate collection (approved candidates)
   createdBy: string;
   updatedBy?: string;
   createdAt?: Date;
@@ -41,8 +43,8 @@ export interface FirestoreJobData {
  * Handles all job-related Firestore operations
  */
 export class JobFirestoreService extends FirestoreBaseService<FirestoreJobData> {
-  constructor(companyId: string) {
-    super(`companies/${companyId}/jobs`);
+  constructor() {
+    super('jobs');
   }
 
   /**
@@ -238,8 +240,8 @@ export class JobFirestoreService extends FirestoreBaseService<FirestoreJobData> 
   }
 }
 
-// Export singleton instance with default company ID
-export const jobService = new JobFirestoreService(config.migration.defaultCompanyId);
+// Export singleton instance
+export const jobService = new JobFirestoreService();
 
 // Export type alias for consistency
 export type IJob = FirestoreJobData;

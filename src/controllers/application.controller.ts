@@ -662,11 +662,13 @@ export const approveApplication = asyncHandler(
 
     // Get the first stage of the pipeline (if pipeline exists)
     let firstStageId = null;
+    let firstStageName = null;
     if (pipeline && pipeline.stages && pipeline.stages.length > 0) {
       // Sort stages by order and get the first one
       const sortedStages = pipeline.stages.sort((a: any, b: any) => a.order - b.order);
       firstStageId = sortedStages[0]._id;
-      logger.info(`Assigning candidate to first stage: ${sortedStages[0].name} (ID: ${firstStageId})`);
+      firstStageName = sortedStages[0].name;
+      logger.info(`Assigning candidate to first stage: ${firstStageName} (ID: ${firstStageId})`);
     } else if (pipeline) {
       logger.warn(`Pipeline ${pipeline._id} has no stages defined`);
     } else {
@@ -695,6 +697,7 @@ export const approveApplication = asyncHandler(
         status: 'active',
         appliedAt: application.createdAt || new Date(),
         lastStatusChange: new Date(),
+        currentStage: firstStageName || undefined, // Set the current stage name
         resumeScore: aiScore?.overallScore,
         emailIds: [],
         emailsSent: 0,
@@ -806,6 +809,16 @@ export const approveApplication = asyncHandler(
     console.log('Experience Count:', (candidate as any).experience?.length || 0);
     console.log('Education Count:', (candidate as any).education?.length || 0);
     console.log('========================');
+
+    // Update job's candidateIds array to maintain bidirectional relationship
+    const currentCandidateIds = job.candidateIds || [];
+    if (!currentCandidateIds.includes(candidate.id!)) {
+      await jobService.update(jobId, {
+        candidateIds: [...currentCandidateIds, candidate.id!],
+        updatedAt: new Date(),
+      } as any);
+      logger.info(`Added candidate ${candidate.id} to job ${jobId} candidateIds array`);
+    }
 
     // Update application status and link to candidate
     await applicationService.update(id, {
