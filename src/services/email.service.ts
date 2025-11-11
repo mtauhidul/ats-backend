@@ -261,6 +261,7 @@ export const sendInterviewNotificationEmail = async (options: {
   meetingPassword?: string;
   interviewerNames?: string[];
   isInstant?: boolean;
+  companyName?: string;
 }): Promise<string | null> => {
   const {
     candidateEmail,
@@ -274,6 +275,7 @@ export const sendInterviewNotificationEmail = async (options: {
     meetingPassword,
     interviewerNames,
     isInstant,
+    companyName,
   } = options;
 
   const html = await render(
@@ -288,6 +290,7 @@ export const sendInterviewNotificationEmail = async (options: {
       meetingPassword,
       interviewerNames,
       isInstant,
+      companyName: companyName || process.env.COMPANY_NAME || 'YTFCS',
     })
   );
 

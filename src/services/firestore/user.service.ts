@@ -1,5 +1,33 @@
 import { FirestoreBaseService } from "./base.service";
 
+/**
+ * Unified User Permissions Schema
+ * Matches frontend permissions exactly for consistency
+ */
+export interface UserPermissions {
+  canManageClients: boolean;
+  canManageJobs: boolean;
+  canReviewApplications: boolean;
+  canManageCandidates: boolean;
+  canSendEmails: boolean;
+  canManageTeam: boolean;
+  canAccessAnalytics: boolean;
+}
+
+/**
+ * User Roles - includes viewer role for frontend compatibility
+ */
+export type UserRole =
+  | "admin"
+  | "recruiter"
+  | "hiring_manager"
+  | "interviewer"
+  | "coordinator"
+  | "viewer";
+
+/**
+ * User Interface
+ */
 export interface IUser {
   id?: string;
   email: string;
@@ -10,12 +38,7 @@ export interface IUser {
   phone?: string;
   title?: string;
   department?: string;
-  role:
-    | "admin"
-    | "recruiter"
-    | "hiring_manager"
-    | "interviewer"
-    | "coordinator";
+  role: UserRole;
   isActive: boolean;
   emailVerified: boolean;
   emailVerificationToken?: string;
@@ -26,15 +49,7 @@ export interface IUser {
   passwordResetExpires?: Date;
   refreshToken?: string;
   lastLogin?: Date;
-  permissions?: {
-    canManageClients?: boolean;
-    canManageJobs?: boolean;
-    canReviewApplications?: boolean;
-    canManageCandidates?: boolean;
-    canSendEmails?: boolean;
-    canManageTeam?: boolean;
-    canAccessAnalytics?: boolean;
-  };
+  permissions?: Partial<UserPermissions>; // Partial for backward compatibility
   createdAt: Date;
   updatedAt: Date;
 }
@@ -215,12 +230,89 @@ class UserService extends FirestoreBaseService<IUser> {
    */
   async updatePermissions(
     id: string,
-    permissions: IUser["permissions"]
+    permissions: Partial<UserPermissions>
   ): Promise<void> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
     await this.update(id, {
-      permissions,
+      permissions: { ...user.permissions, ...permissions },
       updatedAt: new Date(),
     });
+  }
+
+  /**
+   * Get default permissions for a role
+   */
+  getDefaultPermissions(role: UserRole): UserPermissions {
+    const defaults: Record<UserRole, UserPermissions> = {
+      admin: {
+        canManageClients: true,
+        canManageJobs: true,
+        canReviewApplications: true,
+        canManageCandidates: true,
+        canSendEmails: true,
+        canManageTeam: true,
+        canAccessAnalytics: true,
+      },
+      recruiter: {
+        canManageClients: true,
+        canManageJobs: true,
+        canReviewApplications: true,
+        canManageCandidates: true,
+        canSendEmails: true,
+        canManageTeam: false,
+        canAccessAnalytics: true,
+      },
+      hiring_manager: {
+        canManageClients: false,
+        canManageJobs: true,
+        canReviewApplications: true,
+        canManageCandidates: true,
+        canSendEmails: true,
+        canManageTeam: false,
+        canAccessAnalytics: true,
+      },
+      interviewer: {
+        canManageClients: false,
+        canManageJobs: false,
+        canReviewApplications: true,
+        canManageCandidates: false,
+        canSendEmails: true,
+        canManageTeam: false,
+        canAccessAnalytics: false,
+      },
+      coordinator: {
+        canManageClients: false,
+        canManageJobs: false,
+        canReviewApplications: false,
+        canManageCandidates: false,
+        canSendEmails: true,
+        canManageTeam: false,
+        canAccessAnalytics: true,
+      },
+      viewer: {
+        canManageClients: false,
+        canManageJobs: false,
+        canReviewApplications: false,
+        canManageCandidates: false,
+        canSendEmails: false,
+        canManageTeam: false,
+        canAccessAnalytics: true,
+      },
+    };
+
+    return defaults[role];
+  }
+
+  /**
+   * Set permissions based on role (helper for user creation)
+   */
+  async setRoleBasedPermissions(id: string, role: UserRole): Promise<void> {
+    const permissions = this.getDefaultPermissions(role);
+    await this.updatePermissions(id, permissions);
   }
 
   /**

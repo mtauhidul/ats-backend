@@ -1,6 +1,6 @@
 import express from 'express';
 import { validate } from '../middleware/validation';
-import { authenticate, requireRole } from '../middleware/auth';
+import { authenticate, requirePermission } from '../middleware/auth';
 import {
   createClient,
   getClients,
@@ -25,11 +25,11 @@ router.use(authenticate);
 /**
  * @route   POST /api/clients
  * @desc    Create new client
- * @access  Admin, Super Admin
+ * @access  Users with canManageClients permission
  */
 router.post(
   '/',
-  requireRole('admin'),
+  requirePermission('canManageClients'),
   validate(createClientSchema),
   createClient
 );
@@ -48,11 +48,11 @@ router.get(
 /**
  * @route   GET /api/clients/stats
  * @desc    Get client statistics
- * @access  Admin, Super Admin
+ * @access  Users with canManageClients or canAccessAnalytics permission
  */
 router.get(
   '/stats',
-  requireRole('admin'),
+  requirePermission('canManageClients', 'canAccessAnalytics'),
   getClientStats
 );
 
@@ -70,11 +70,11 @@ router.get(
 /**
  * @route   PUT /api/clients/:id
  * @desc    Update client
- * @access  Admin, Super Admin
+ * @access  Users with canManageClients permission
  */
 router.put(
   '/:id',
-  requireRole('admin'),
+  requirePermission('canManageClients'),
   validate(updateClientSchema),
   updateClient
 );
@@ -82,11 +82,11 @@ router.put(
 /**
  * @route   PATCH /api/clients/:id
  * @desc    Update client (partial update)
- * @access  Admin, Super Admin
+ * @access  Users with canManageClients permission
  */
 router.patch(
   '/:id',
-  requireRole('admin'),
+  requirePermission('canManageClients'),
   validate(updateClientSchema),
   updateClient
 );
@@ -104,11 +104,11 @@ router.post(
 /**
  * @route   DELETE /api/clients/:id
  * @desc    Delete client
- * @access  Admin, Super Admin
+ * @access  Users with canManageClients permission
  */
 router.delete(
   '/:id',
-  requireRole('admin'),
+  requirePermission('canManageClients'),
   validate(clientIdSchema),
   deleteClient
 );

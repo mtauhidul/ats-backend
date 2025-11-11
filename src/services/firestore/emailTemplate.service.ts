@@ -160,16 +160,45 @@ class EmailTemplateService extends FirestoreBaseService<IEmailTemplate> {
 
   /**
    * Replace variables in template
+   * Supports both {{variable}} and [Variable Name] formats
    */
   replaceVariables(
     template: string,
     variables: Record<string, string>
   ): string {
     let result = template;
+    
+    // Define mapping between camelCase keys and [Display Name] formats
+    const displayNameMap: Record<string, string[]> = {
+      'companyName': ['Company Name', 'CompanyName'],
+      'candidateName': ['Candidate Name', 'CandidateName'],
+      'jobTitle': ['Job Title', 'JobTitle'],
+      'interviewDate': ['Interview Date', 'InterviewDate'],
+      'interviewTime': ['Interview Time', 'InterviewTime'],
+      'interviewLocation': ['Interview Location', 'InterviewLocation'],
+      'interviewDuration': ['Interview Duration', 'InterviewDuration', 'Duration'],
+      'recruiterName': ['Recruiter Name', 'RecruiterName'],
+      'startDate': ['Start Date', 'StartDate'],
+      'salary': ['Salary'],
+      'benefits': ['Benefits'],
+      'responseDeadline': ['Response Deadline', 'ResponseDeadline'],
+      'screeningDeadline': ['Screening Deadline', 'ScreeningDeadline'],
+      'customMessage': ['Custom Message', 'CustomMessage'],
+    };
+    
     Object.entries(variables).forEach(([key, value]) => {
-      const regex = new RegExp(`{{${key}}}`, "g");
-      result = result.replace(regex, value || "");
+      // Replace {{key}} format
+      const curlyRegex = new RegExp(`{{${key}}}`, "g");
+      result = result.replace(curlyRegex, value || "");
+      
+      // Replace [Display Name] format
+      const displayNames = displayNameMap[key] || [key];
+      displayNames.forEach(displayName => {
+        const bracketRegex = new RegExp(`\\[${displayName}\\]`, "g");
+        result = result.replace(bracketRegex, value || "");
+      });
     });
+    
     return result;
   }
 

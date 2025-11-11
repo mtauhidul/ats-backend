@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import { userService, IUser } from "../services/firestore";
 import { AuthenticationError, AuthorizationError } from "../utils/errors";
 import { verifyAccessToken, TokenPayload } from "../utils/auth";
+import logger from "../utils/logger";
 
 // Extend Express Request to include user
 declare global {
@@ -91,7 +92,155 @@ export const requireRole = (...allowedRoles: string[]) => {
 export const requireAdmin = requireRole("admin");
 
 /**
- * Check if user has permission
+ * Permission types matching frontend
+ */
+type UserPermission = 
+  | "canManageClients"
+  | "canManageJobs"
+  | "canReviewApplications"
+  | "canManageCandidates"
+  | "canSendEmails"
+  | "canManageTeam"
+  | "canAccessAnalytics";
+
+/**
+ * Check if user has specific permission (granular)
+ * This checks the user's permissions object directly
+ * Includes audit logging for security tracking
+ */
+export const requirePermission = (...requiredPermissions: UserPermission[]) => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      return next(new AuthenticationError("User not authenticated"));
+    }
+
+    const endpoint = `${req.method} ${req.originalUrl}`;
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const userRole = req.user.role;
+
+    // Admins have all permissions by default
+    if (req.user.role === "admin") {
+      logger.info(`[PERMISSION] Admin access granted: ${userEmail} to ${endpoint}`);
+      return next();
+    }
+
+    // Check if user has permissions object
+    if (!req.user.permissions) {
+      logger.warn(
+        `[PERMISSION] Access denied - No permissions assigned: User ${userEmail} (${userId}) tried to access ${endpoint}`
+      );
+      return next(
+        new AuthorizationError(
+          "User has no permissions assigned. Please contact your administrator."
+        )
+      );
+    }
+
+    // Check if user has at least one of the required permissions
+    const hasRequiredPermission = requiredPermissions.some(
+      (permission) => req.user?.permissions?.[permission] === true
+    );
+
+    if (!hasRequiredPermission) {
+      const userPermissions = Object.entries(req.user.permissions)
+        .filter(([, value]) => value === true)
+        .map(([key]) => key);
+
+      logger.warn(
+        `[PERMISSION] Access denied: User ${userEmail} (${userId}, role: ${userRole}) ` +
+        `tried to access ${endpoint}. Required: [${requiredPermissions.join(", ")}], ` +
+        `Has: [${userPermissions.join(", ")}]`
+      );
+
+      return next(
+        new AuthorizationError(
+          `This action requires one of the following permissions: ${requiredPermissions.join(", ")}`
+        )
+      );
+    }
+
+    // Log successful permission check
+    const grantedPermission = requiredPermissions.find(
+      (permission) => req.user?.permissions?.[permission] === true
+    );
+    logger.info(
+      `[PERMISSION] Access granted: User ${userEmail} (${userId}) accessed ${endpoint} ` +
+      `with permission: ${grantedPermission}`
+    );
+
+    next();
+  };
+};
+
+/**
+ * Check if user has ALL specified permissions
+ * Includes audit logging for security tracking
+ */
+export const requireAllPermissions = (...requiredPermissions: UserPermission[]) => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      return next(new AuthenticationError("User not authenticated"));
+    }
+
+    const endpoint = `${req.method} ${req.originalUrl}`;
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const userRole = req.user.role;
+
+    // Admins have all permissions by default
+    if (req.user.role === "admin") {
+      logger.info(`[PERMISSION] Admin access granted: ${userEmail} to ${endpoint}`);
+      return next();
+    }
+
+    // Check if user has permissions object
+    if (!req.user.permissions) {
+      logger.warn(
+        `[PERMISSION] Access denied - No permissions assigned: User ${userEmail} (${userId}) tried to access ${endpoint}`
+      );
+      return next(
+        new AuthorizationError(
+          "User has no permissions assigned. Please contact your administrator."
+        )
+      );
+    }
+
+    // Check if user has ALL required permissions
+    const hasAllPermissions = requiredPermissions.every(
+      (permission) => req.user?.permissions?.[permission] === true
+    );
+
+    if (!hasAllPermissions) {
+      const missingPermissions = requiredPermissions.filter(
+        (permission) => !req.user?.permissions?.[permission]
+      );
+
+      logger.warn(
+        `[PERMISSION] Access denied: User ${userEmail} (${userId}, role: ${userRole}) ` +
+        `tried to access ${endpoint}. Missing permissions: [${missingPermissions.join(", ")}]`
+      );
+
+      return next(
+        new AuthorizationError(
+          `This action requires all of the following permissions: ${requiredPermissions.join(", ")}`
+        )
+      );
+    }
+
+    // Log successful permission check
+    logger.info(
+      `[PERMISSION] Access granted: User ${userEmail} (${userId}) accessed ${endpoint} ` +
+      `with all required permissions: [${requiredPermissions.join(", ")}]`
+    );
+
+    next();
+  };
+};
+
+/**
+ * Legacy permission check (kept for backward compatibility)
+ * @deprecated Use requirePermission instead
  */
 export const hasPermission = (requiredPermission: string) => {
   return (req: Request, _res: Response, next: NextFunction): void => {
@@ -104,7 +253,7 @@ export const hasPermission = (requiredPermission: string) => {
       return next();
     }
 
-    // Define role-based permissions
+    // Define role-based permissions (legacy)
     const rolePermissions: Record<string, string[]> = {
       admin: [
         "view_all",

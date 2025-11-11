@@ -220,20 +220,25 @@ export const createTeamMember = asyncHandler(
       throw new BadRequestError('Either userId and jobId, or email with firstName and lastName are required');
     }
 
-    // Map frontend permissions to backend permissions
-    const backendPermissions = {
-      canViewApplications: data.permissions?.canReviewApplications || data.permissions?.canViewApplications || true,
-      canReviewApplications: data.permissions?.canReviewApplications || false,
-      canScheduleInterviews: data.permissions?.canManageJobs || false,
-      canViewFeedback: data.permissions?.canAccessAnalytics || false,
-      canProvideFeedback: data.permissions?.canReviewApplications || false,
+    // Use unified permissions schema (no mapping/conversion needed)
+    // Default permissions based on role if not provided
+    const defaultPermissions = {
+      canManageClients: false,
+      canManageJobs: false,
+      canReviewApplications: false,
+      canManageCandidates: false,
+      canSendEmails: false,
+      canManageTeam: false,
+      canAccessAnalytics: false,
     };
 
-    // Create team member with mapped data
+    const permissions = data.permissions || defaultPermissions;
+
+    // Create team member with unified schema
     const teamMemberData: any = {
       userId,
       role: data.role || 'recruiter',
-      permissions: backendPermissions,
+      permissions,
       isActive: data.status === 'active' || data.status === undefined,
       addedBy: req.user?.id,
     };

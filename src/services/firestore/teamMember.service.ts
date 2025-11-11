@@ -1,17 +1,29 @@
 import { FirestoreBaseService } from "./base.service";
 
+/**
+ * Unified permissions schema matching frontend and User collection
+ */
+export interface TeamMemberPermissions {
+  canManageClients: boolean;
+  canManageJobs: boolean;
+  canReviewApplications: boolean;
+  canManageCandidates: boolean;
+  canSendEmails: boolean;
+  canManageTeam: boolean;
+  canAccessAnalytics: boolean;
+}
+
+/**
+ * TeamMember interface - represents job-specific team assignments
+ * Note: For general user permissions, use User.permissions
+ * TeamMember permissions are job-specific overrides
+ */
 export interface ITeamMember {
   id?: string;
   userId: string;
   jobId?: string;
-  role: "admin" | "recruiter" | "hiring_manager" | "interviewer" | "coordinator";
-  permissions: {
-    canViewApplications: boolean;
-    canReviewApplications: boolean;
-    canScheduleInterviews: boolean;
-    canViewFeedback: boolean;
-    canProvideFeedback: boolean;
-  };
+  role: "admin" | "recruiter" | "hiring_manager" | "interviewer" | "coordinator" | "viewer";
+  permissions: TeamMemberPermissions;
   isActive: boolean;
   addedBy: string;
   createdAt: Date;
@@ -55,7 +67,7 @@ class TeamMemberService extends FirestoreBaseService<ITeamMember> {
 
   async updatePermissions(
     id: string,
-    permissions: Partial<ITeamMember["permissions"]>
+    permissions: Partial<TeamMemberPermissions>
   ): Promise<void> {
     const member = await this.findById(id);
     if (!member) {

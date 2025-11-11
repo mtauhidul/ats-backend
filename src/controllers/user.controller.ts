@@ -143,6 +143,15 @@ export const updateUser = asyncHandler(
     delete updates.createdAt;
     delete updates.updatedAt;
 
+    // Get existing user for audit logging
+    const existingUser = await userService.findById(id);
+    if (!existingUser) {
+      throw new NotFoundError('User not found');
+    }
+
+    // Track permission changes for audit log
+    const oldPermissions = existingUser.permissions || {};
+
     // If role is being changed to admin, automatically grant all permissions
     if (updates.role === 'admin') {
       updates.permissions = {
@@ -163,7 +172,38 @@ export const updateUser = asyncHandler(
       throw new NotFoundError('User not found');
     }
 
-    logger.info(`User updated: ${user.email} by ${req.user?.email}`);
+    // Log user update with details
+    logger.info(`[USER_UPDATE] User updated: ${user.email} by ${req.user?.email || 'system'}`);
+
+    // Log permission changes specifically for audit trail
+    if (updates.permissions || updates.role) {
+      const permissionChanges: string[] = [];
+      
+      if (updates.role && updates.role !== existingUser.role) {
+        logger.info(
+          `[PERMISSION_CHANGE] Role changed for ${user.email}: ${existingUser.role} → ${updates.role} ` +
+          `by ${req.user?.email || 'system'}`
+        );
+      }
+
+      if (updates.permissions) {
+        const changedPerms = Object.entries(updates.permissions).filter(
+          ([key, value]) => oldPermissions[key as keyof typeof oldPermissions] !== value
+        );
+
+        if (changedPerms.length > 0) {
+          changedPerms.forEach(([perm, value]) => {
+            const oldValue = oldPermissions[perm as keyof typeof oldPermissions];
+            permissionChanges.push(`${perm}: ${oldValue} → ${value}`);
+          });
+
+          logger.info(
+            `[PERMISSION_CHANGE] Permissions updated for ${user.email} by ${req.user?.email || 'system'}: ` +
+            `${permissionChanges.join(", ")}`
+          );
+        }
+      }
+    }
 
     // Send notification email about profile/role changes
     if (user.email) {

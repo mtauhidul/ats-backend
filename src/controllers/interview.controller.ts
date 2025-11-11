@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { interviewService, candidateService, jobService } from '../services/firestore';
+import { interviewService, candidateService, jobService, clientService } from '../services/firestore';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
 import { NotFoundError } from '../utils/errors';
 import logger from '../utils/logger';
@@ -170,6 +170,19 @@ export const createInterview = asyncHandler(
               .filter((name: string) => name.length > 0)
           : [];
 
+        // Get company name from client
+        let companyName = process.env.COMPANY_NAME || 'YTFCS';
+        if (job.clientId) {
+          try {
+            const client = await clientService.findById(job.clientId);
+            if (client && client.companyName) {
+              companyName = client.companyName;
+            }
+          } catch (error) {
+            logger.warn(`Could not fetch client for company name: ${error}`);
+          }
+        }
+
         await emailService.sendInterviewNotificationEmail({
           candidateEmail: candidate.email,
           candidateName: `${candidate.firstName} ${candidate.lastName}`,
@@ -182,6 +195,7 @@ export const createInterview = asyncHandler(
           meetingPassword: interview!.meetingPassword,
           interviewerNames: interviewerNames.length > 0 ? interviewerNames : undefined,
           isInstant: data.isInstant || false,
+          companyName,
         });
 
         logger.info(`Interview notification email sent to candidate: ${candidate.email}`);

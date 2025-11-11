@@ -13,6 +13,7 @@ interface InterviewNotificationProps {
   meetingPassword?: string;
   interviewerNames?: string[];
   isInstant?: boolean;
+  companyName?: string;
 }
 
 export const InterviewNotification = ({
@@ -25,7 +26,8 @@ export const InterviewNotification = ({
   meetingLink,
   meetingPassword,
   interviewerNames,
-  isInstant,
+  isInstant = false,
+  companyName = 'YTFCS',
 }: InterviewNotificationProps) => {
   const scheduledDate = new Date(scheduledAt);
   const formattedDate = scheduledDate.toLocaleDateString("en-US", {
@@ -54,7 +56,7 @@ export const InterviewNotification = ({
     : `Interview Scheduled: ${jobTitle}`;
 
   return (
-    <EmailLayout preview={previewText}>
+    <EmailLayout preview={previewText} companyName={companyName}>
       <Heading className="mx-0 my-[30px] p-0 text-center font-normal text-[24px] text-black">
         📅 Interview Scheduled{" "}
         {isInstant && (
@@ -87,7 +89,7 @@ export const InterviewNotification = ({
         ) : (
           <>
             <strong>Great news!</strong> Your interview has been scheduled for
-            the <strong>{jobTitle}</strong> position.
+            the <strong>{jobTitle}</strong> position at <strong>{companyName}</strong>.
           </>
         )}
       </Text>

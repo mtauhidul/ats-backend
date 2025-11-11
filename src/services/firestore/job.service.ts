@@ -16,6 +16,7 @@ export interface FirestoreJobData {
     min: number;
     max: number;
     currency: string;
+    period?: 'hourly' | 'daily' | 'monthly' | 'yearly';
   };
   skills: string[];
   benefits?: string[];

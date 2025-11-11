@@ -1,6 +1,6 @@
 import express from 'express';
 import { validate } from '../middleware/validation';
-import { authenticate, requireRole } from '../middleware/auth';
+import { authenticate, requirePermission } from '../middleware/auth';
 import {
   createJob,
   getJobs,
@@ -48,11 +48,11 @@ router.use(authenticate);
 /**
  * @route   POST /api/jobs
  * @desc    Create new job
- * @access  Recruiter, Admin, Super Admin
+ * @access  Users with canManageJobs permission
  */
 router.post(
   '/',
-  requireRole('recruiter', 'admin'),
+  requirePermission('canManageJobs'),
   validate(createJobSchema),
   createJob
 );
@@ -60,22 +60,22 @@ router.post(
 /**
  * @route   GET /api/jobs/stats
  * @desc    Get job statistics
- * @access  Recruiter, Admin, Super Admin, Hiring Manager
+ * @access  Users with canManageJobs or canAccessAnalytics permission
  */
 router.get(
   '/stats',
-  requireRole('recruiter', 'admin', 'hiring_manager'),
+  requirePermission('canManageJobs', 'canAccessAnalytics'),
   getJobStats
 );
 
 /**
  * @route   PUT /api/jobs/:id
  * @desc    Update job
- * @access  Recruiter, Admin, Super Admin
+ * @access  Users with canManageJobs permission
  */
 router.put(
   '/:id',
-  requireRole('recruiter', 'admin'),
+  requirePermission('canManageJobs'),
   validate(updateJobSchema),
   updateJob
 );
@@ -83,11 +83,11 @@ router.put(
 /**
  * @route   PATCH /api/jobs/:id
  * @desc    Update job (partial update)
- * @access  Recruiter, Admin, Super Admin
+ * @access  Users with canManageJobs permission
  */
 router.patch(
   '/:id',
-  requireRole('recruiter', 'admin'),
+  requirePermission('canManageJobs'),
   validate(updateJobSchema),
   updateJob
 );
@@ -95,11 +95,11 @@ router.patch(
 /**
  * @route   DELETE /api/jobs/:id
  * @desc    Delete job
- * @access  Admin, Super Admin
+ * @access  Users with canManageJobs permission (typically admins)
  */
 router.delete(
   '/:id',
-  requireRole('admin'),
+  requirePermission('canManageJobs'),
   validate(jobIdSchema),
   deleteJob
 );
@@ -107,11 +107,11 @@ router.delete(
 /**
  * @route   POST /api/jobs/bulk/status
  * @desc    Bulk update job status
- * @access  Recruiter, Admin, Super Admin
+ * @access  Users with canManageJobs permission
  */
 router.post(
   '/bulk/status',
-  requireRole('recruiter', 'admin'),
+  requirePermission('canManageJobs'),
   validate(bulkUpdateJobStatusSchema),
   bulkUpdateJobStatus
 );

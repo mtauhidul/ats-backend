@@ -85,6 +85,8 @@ export const deleteTag = asyncHandler(
     const tag = await tagService.findById(req.params.id);
     if (!tag) throw new NotFoundError('Tag not found');
 
+    logger.info(`[TAG_DELETE] Attempting to delete tag: ${tag.name} (${req.params.id}) by user: ${req.user?.email}`);
+
     // Check if tag is in use by any candidates or jobs
     const { candidateService, jobService } = require('../services/firestore');
     
@@ -101,13 +103,28 @@ export const deleteTag = asyncHandler(
     const totalUsage = candidatesWithTag.length + jobsWithTag.length;
     
     if (totalUsage > 0) {
+      logger.warn(
+        `[TAG_DELETE] Cannot delete tag "${tag.name}" (${req.params.id}): ` +
+        `Used by ${candidatesWithTag.length} candidate(s) and ${jobsWithTag.length} job(s). ` +
+        `Requested by: ${req.user?.email}`
+      );
+      
+      const usageDetails = [];
+      if (candidatesWithTag.length > 0) {
+        usageDetails.push(`${candidatesWithTag.length} candidate(s)`);
+      }
+      if (jobsWithTag.length > 0) {
+        usageDetails.push(`${jobsWithTag.length} job(s)`);
+      }
+      
       throw new CustomValidationError(
-        `Cannot delete tag "${tag.name}" because it is currently used by ${candidatesWithTag.length} candidate(s) and ${jobsWithTag.length} job(s). Please remove the tag from all candidates and jobs first.`
+        `Cannot delete tag "${tag.name}" because it is currently assigned to ${usageDetails.join(' and ')}. ` +
+        `Please remove the tag from all candidates and jobs before deleting it.`
       );
     }
 
     await tagService.delete(req.params.id);
-    logger.info(`Tag deleted: ${tag.name}`);
+    logger.info(`[TAG_DELETE] Tag successfully deleted: ${tag.name} (${req.params.id}) by user: ${req.user?.email}`);
     successResponse(res, null, 'Tag deleted successfully');
   }
 );

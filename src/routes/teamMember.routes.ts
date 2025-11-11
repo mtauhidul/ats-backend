@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticate, requireRole } from '../middleware/auth';
+import { authenticate, requirePermission } from '../middleware/auth';
 import {
   getTeamMembers,
   getTeamMemberById,
@@ -38,44 +38,44 @@ router.get('/:id', getTeamMemberById);
 /**
  * @route   POST /api/team
  * @desc    Add new team member to job
- * @access  Recruiter, Admin, Super Admin
+ * @access  Users with canManageTeam permission
  */
 router.post(
   '/',
-  requireRole('recruiter', 'admin'),
+  requirePermission('canManageTeam'),
   createTeamMember
 );
 
 /**
  * @route   PUT /api/team/:id
  * @desc    Update team member
- * @access  Recruiter, Admin, Super Admin
+ * @access  Users with canManageTeam permission
  */
 router.put(
   '/:id',
-  requireRole('recruiter', 'admin'),
+  requirePermission('canManageTeam'),
   updateTeamMember
 );
 
 /**
  * @route   PATCH /api/team/:id
  * @desc    Update team member (partial)
- * @access  Recruiter, Admin, Super Admin
+ * @access  Users with canManageTeam permission
  */
 router.patch(
   '/:id',
-  requireRole('recruiter', 'admin'),
+  requirePermission('canManageTeam'),
   updateTeamMember
 );
 
 /**
  * @route   DELETE /api/team/:id
  * @desc    Remove team member
- * @access  Recruiter, Admin, Super Admin
+ * @access  Users with canManageTeam permission
  */
 router.delete(
   '/:id',
-  requireRole('recruiter', 'admin'),
+  requirePermission('canManageTeam'),
   deleteTeamMember
 );
 

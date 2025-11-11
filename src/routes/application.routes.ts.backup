@@ -53,7 +53,7 @@ router.use(authenticate);
  */
 router.post(
   '/',
-  requirePermission('canReviewApplications'),
+  requireRole('recruiter', 'admin'),
   validate(createApplicationSchema),
   createApplication
 );
@@ -65,7 +65,7 @@ router.post(
  */
 router.get(
   '/',
-  requirePermission('canReviewApplications'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   validate(listApplicationsSchema),
   getApplications
 );
@@ -77,7 +77,7 @@ router.get(
  */
 router.get(
   '/stats',
-  requirePermission('canReviewApplications', 'canAccessAnalytics'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   getApplicationStats
 );
 
@@ -98,7 +98,7 @@ router.get(
  */
 router.get(
   '/:id',
-  requirePermission('canReviewApplications'),
+  requireRole('recruiter', 'hiring_manager', 'admin'),
   validate(applicationIdSchema),
   getApplicationById
 );
@@ -110,7 +110,7 @@ router.get(
  */
 router.put(
   '/:id',
-  requirePermission('canReviewApplications'),
+  requireRole('recruiter', 'admin'),
   validate(updateApplicationSchema),
   updateApplication
 );
@@ -118,11 +118,11 @@ router.put(
 /**
  * @route   PATCH /api/applications/:id
  * @desc    Update application (partial update)
- * @access  Users with canReviewApplications permission
+ * @access  Recruiter, Admin, Super Admin
  */
 router.patch(
   '/:id',
-  requirePermission('canReviewApplications'),
+  requireRole('recruiter', 'admin'),
   validate(updateApplicationSchema),
   updateApplication
 );
@@ -130,11 +130,17 @@ router.patch(
 /**
  * @route   DELETE /api/applications/:id
  * @desc    Delete application
- * @access  Users with canReviewApplications permission
+ * @access  Admin, Super Admin
+```
+
+/**
+ * @route   DELETE /api/applications/:id
+ * @desc    Delete application
+ * @access  Admin, Super Admin
  */
 router.delete(
   '/:id',
-  requirePermission('canReviewApplications'),
+  requireRole('admin'),
   validate(applicationIdSchema),
   deleteApplication
 );
@@ -142,11 +148,11 @@ router.delete(
 /**
  * @route   POST /api/applications/:id/approve
  * @desc    Approve application and create candidate with AI scoring
- * @access  Users with canReviewApplications permission
+ * @access  Recruiter, Admin, Super Admin
  */
 router.post(
   '/:id/approve',
-  requirePermission('canReviewApplications'),
+  requireRole('recruiter', 'admin'),
   validate(approveApplicationSchema),
   approveApplication
 );
@@ -154,11 +160,11 @@ router.post(
 /**
  * @route   POST /api/applications/bulk/status
  * @desc    Bulk update application status
- * @access  Users with canReviewApplications permission
+ * @access  Recruiter, Admin, Super Admin
  */
 router.post(
   '/bulk/status',
-  requirePermission('canReviewApplications'),
+  requireRole('recruiter', 'admin'),
   validate(bulkUpdateStatusSchema),
   bulkUpdateStatus
 );
@@ -166,22 +172,22 @@ router.post(
 /**
  * @route   POST /api/applications/bulk/delete
  * @desc    Bulk delete applications
- * @access  Users with canReviewApplications permission
+ * @access  Admin, Super Admin
  */
 router.post(
   '/bulk/delete',
-  requirePermission('canReviewApplications'),
+  requireRole('admin'),
   bulkDeleteApplications
 );
 
 /**
  * @route   POST /api/applications/:id/team-members
  * @desc    Assign team member(s) to an application
- * @access  Users with canReviewApplications or canManageTeam permission
+ * @access  Recruiter, Admin, Super Admin
  */
 router.post(
   '/:id/team-members',
-  requirePermission('canReviewApplications', 'canManageTeam'),
+  requireRole('recruiter', 'admin'),
   async (req: any, res: any) => {
     try {
       const { id } = req.params;
@@ -243,11 +249,11 @@ router.post(
 /**
  * @route   DELETE /api/applications/:id/team-members/:memberId
  * @desc    Remove team member from an application
- * @access  Users with canReviewApplications or canManageTeam permission
+ * @access  Recruiter, Admin, Super Admin
  */
 router.delete(
   '/:id/team-members/:memberId',
-  requirePermission('canReviewApplications', 'canManageTeam'),
+  requireRole('recruiter', 'admin'),
   async (req: any, res: any) => {
     try {
       const { id, memberId } = req.params;

@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticate, requireRole } from '../middleware/auth';
+import { authenticate, requirePermission } from '../middleware/auth';
 import { uploadAvatar } from '../middleware/upload';
 import {
   getUsers,
@@ -27,33 +27,33 @@ router.get('/me', getCurrentUser);
 /**
  * @route   GET /api/users/stats
  * @desc    Get user statistics
- * @access  Admin, Super Admin
+ * @access  Users with canManageTeam or canAccessAnalytics permission
  */
 router.get(
   '/stats',
-  requireRole('admin'),
+  requirePermission('canManageTeam', 'canAccessAnalytics'),
   getUserStats
 );
 
 /**
  * @route   GET /api/users
  * @desc    Get all users with filters
- * @access  Admin, Super Admin, Recruiter
+ * @access  Users with canManageTeam permission
  */
 router.get(
   '/',
-  requireRole('admin', 'recruiter'),
+  requirePermission('canManageTeam'),
   getUsers
 );
 
 /**
  * @route   GET /api/users/:id
  * @desc    Get user by ID
- * @access  Admin, Super Admin, Recruiter
+ * @access  Users with canManageTeam permission
  */
 router.get(
   '/:id',
-  requireRole('admin', 'recruiter'),
+  requirePermission('canManageTeam'),
   getUserById
 );
 
@@ -81,33 +81,33 @@ router.delete(
 /**
  * @route   PUT /api/users/:id
  * @desc    Update user
- * @access  Admin, Super Admin
+ * @access  Users with canManageTeam permission
  */
 router.put(
   '/:id',
-  requireRole('admin'),
+  requirePermission('canManageTeam'),
   updateUser
 );
 
 /**
  * @route   PATCH /api/users/:id
  * @desc    Update user (partial)
- * @access  Admin, Super Admin
+ * @access  Users with canManageTeam permission
  */
 router.patch(
   '/:id',
-  requireRole('admin'),
+  requirePermission('canManageTeam'),
   updateUser
 );
 
 /**
  * @route   DELETE /api/users/:id
  * @desc    Deactivate user
- * @access  Admin, Super Admin
+ * @access  Users with canManageTeam permission
  */
 router.delete(
   '/:id',
-  requireRole('admin'),
+  requirePermission('canManageTeam'),
   deleteUser
 );
 
