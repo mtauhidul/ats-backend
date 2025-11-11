@@ -487,6 +487,39 @@ export const deleteJob = asyncHandler(
       throw new NotFoundError("Job not found");
     }
 
+    // Check if there are candidates with active/rejected/hired status
+    const allCandidates = await candidateService.find([]);
+    const jobCandidates = allCandidates.filter((candidate: any) => {
+      if (!candidate.jobIds || !Array.isArray(candidate.jobIds)) return false;
+      return candidate.jobIds.some((jobId: any) => {
+        const jId = typeof jobId === 'object' ? jobId._id || jobId.id : jobId;
+        return jId === id;
+      });
+    });
+
+    // Filter candidates with active, rejected, or hired status
+    const protectedCandidates = jobCandidates.filter((candidate: any) => {
+      const status = candidate.status?.toLowerCase();
+      return status === 'active' || status === 'rejected' || status === 'hired';
+    });
+
+    if (protectedCandidates.length > 0) {
+      const statusBreakdown = {
+        active: protectedCandidates.filter((c: any) => c.status?.toLowerCase() === 'active').length,
+        rejected: protectedCandidates.filter((c: any) => c.status?.toLowerCase() === 'rejected').length,
+        hired: protectedCandidates.filter((c: any) => c.status?.toLowerCase() === 'hired').length,
+      };
+      
+      const statusDetails = [];
+      if (statusBreakdown.active > 0) statusDetails.push(`${statusBreakdown.active} active`);
+      if (statusBreakdown.rejected > 0) statusDetails.push(`${statusBreakdown.rejected} rejected`);
+      if (statusBreakdown.hired > 0) statusDetails.push(`${statusBreakdown.hired} hired`);
+
+      throw new CustomValidationError(
+        `Cannot delete job with ${protectedCandidates.length} candidate${protectedCandidates.length > 1 ? 's' : ''} (${statusDetails.join(', ')}). Please archive or remove these candidates first.`
+      );
+    }
+
     // Check if there are applications
     const allApplications = await applicationService.find([]);
     const jobApplications = allApplications.filter((app: any) => app.jobId === id);

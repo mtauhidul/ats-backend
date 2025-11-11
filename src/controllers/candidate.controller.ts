@@ -523,6 +523,13 @@ export const deleteCandidate = asyncHandler(
       throw new NotFoundError("Candidate not found");
     }
 
+    // Check if candidate has any team members assigned
+    if ((candidate as any).assignedTeamMembers && (candidate as any).assignedTeamMembers.length > 0) {
+      throw new CustomValidationError(
+        `Cannot delete candidate with ${(candidate as any).assignedTeamMembers.length} assigned team member${(candidate as any).assignedTeamMembers.length > 1 ? 's' : ''}. Please unassign all team members first.`
+      );
+    }
+
     // Check if candidate is hired (might want to prevent deletion)
     if (candidate.status === "hired") {
       throw new CustomValidationError(

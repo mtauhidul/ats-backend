@@ -357,7 +357,43 @@ export const deleteClient = asyncHandler(
       );
     }
 
-    // If there are only draft, closed, or cancelled jobs, allow deletion
+    // Check if any of the jobs have candidates that prevent deletion
+    const allCandidates = await candidateService.find([]);
+    const jobsWithProtectedCandidates = [];
+
+    for (const job of jobs) {
+      const jobCandidates = allCandidates.filter((candidate: any) => {
+        if (!candidate.jobIds || !Array.isArray(candidate.jobIds)) return false;
+        return candidate.jobIds.some((jobId: any) => {
+          const jId = typeof jobId === 'object' ? jobId._id || jobId.id : jobId;
+          return jId === job.id;
+        });
+      });
+
+      const protectedCandidates = jobCandidates.filter((candidate: any) => {
+        const status = candidate.status?.toLowerCase();
+        return status === 'active' || status === 'rejected' || status === 'hired';
+      });
+
+      if (protectedCandidates.length > 0) {
+        jobsWithProtectedCandidates.push({
+          title: job.title,
+          count: protectedCandidates.length
+        });
+      }
+    }
+
+    if (jobsWithProtectedCandidates.length > 0) {
+      const jobsList = jobsWithProtectedCandidates
+        .map(j => `"${j.title}" (${j.count} candidate${j.count > 1 ? 's' : ''})`)
+        .join(', ');
+      
+      throw new CustomValidationError(
+        `Cannot delete client because the following jobs have candidates that prevent deletion: ${jobsList}. Please delete or archive these jobs first.`
+      );
+    }
+
+    // If there are only draft, closed, or cancelled jobs without protected candidates, allow deletion
     await clientService.delete(id);
 
     logger.info(`Client deleted: ${client.companyName}`);

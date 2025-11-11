@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import { teamMemberService, userService, jobService } from '../services/firestore';
+import { teamMemberService, userService, jobService, candidateService } from '../services/firestore';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
-import { NotFoundError, BadRequestError } from '../utils/errors';
+import { NotFoundError, BadRequestError, ValidationError } from '../utils/errors';
 import logger from '../utils/logger';
 import { sendAssignmentEmail, sendTeamMemberUpdateEmail } from '../services/email.service';
 
@@ -422,12 +422,29 @@ export const deleteTeamMember = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
-    await teamMemberService.update(id, { isActive: false });
     const teamMember = await teamMemberService.findById(id);
 
     if (!teamMember) {
       throw new NotFoundError('Team member not found');
     }
+
+    // Check if team member has any candidates assigned
+    const allCandidates = await candidateService.find([]);
+    const assignedCandidates = allCandidates.filter((candidate: any) => {
+      const assignedTeamMembers = candidate.assignedTeamMembers || [];
+      return assignedTeamMembers.some((tm: any) => {
+        const tmId = typeof tm === 'string' ? tm : tm.id || tm._id;
+        return tmId === id;
+      });
+    });
+
+    if (assignedCandidates.length > 0) {
+      throw new ValidationError(
+        `Cannot delete team member with ${assignedCandidates.length} assigned candidate${assignedCandidates.length > 1 ? 's' : ''}. Please unassign all candidates first.`
+      );
+    }
+
+    await teamMemberService.update(id, { isActive: false });
 
     logger.info(`Team member removed: ${id} by ${req.user?.email}`);
 
