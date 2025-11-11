@@ -12,6 +12,7 @@ import cloudinaryService from '../services/cloudinary.service';
 import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
 import { NotFoundError, ValidationError as CustomValidationError } from '../utils/errors';
 import logger from '../utils/logger';
+import { logActivity } from '../services/activity.service';
 import {
   CreateApplicationInput,
   UpdateApplicationInput,
@@ -209,6 +210,23 @@ export const createApplication = asyncHandler(
       `Application created: ${application.email} ${jobInfo} via ${data.source}`
     );
 
+    // Log activity
+    if (req.user?.id) {
+      logActivity({
+        userId: req.user.id,
+        action: "created_application",
+        resourceType: "application",
+        resourceId: applicationId,
+        resourceName: `${application.firstName} ${application.lastName}`,
+        metadata: {
+          email: application.email,
+          source: data.source,
+          jobId: data.jobId,
+          jobTitle: job?.title,
+        },
+      }).catch((err) => logger.error("Failed to log activity:", err));
+    }
+
     successResponse(res, transformApplication(application as any), 'Application created successfully', 201);
   }
 );
@@ -397,6 +415,41 @@ export const updateApplication = asyncHandler(
     const updatedApplication = await applicationService.findById(id);
 
     logger.info(`Application updated: ${application.email}`);
+
+    // Log activity
+    if (req.user?.id && updatedApplication) {
+      // Check for status changes
+      if (updates.status && updates.status !== application.status) {
+        const statusActionMap: Record<string, string> = {
+          'approved': 'application_approved',
+          'rejected': 'application_rejected',
+        };
+        
+        const action = statusActionMap[updates.status.toLowerCase()] || 'application_status_changed';
+        
+        logActivity({
+          userId: req.user.id,
+          action: action,
+          resourceType: "application",
+          resourceId: id,
+          resourceName: `${updatedApplication.firstName} ${updatedApplication.lastName}`,
+          metadata: {
+            email: updatedApplication.email,
+            oldStatus: application.status,
+            newStatus: updates.status,
+          },
+        }).catch((err) => logger.error("Failed to log activity:", err));
+      } else {
+        // General update
+        logActivity({
+          userId: req.user.id,
+          action: "updated_application",
+          resourceType: "application",
+          resourceId: id,
+          resourceName: `${updatedApplication.firstName} ${updatedApplication.lastName}`,
+        }).catch((err) => logger.error("Failed to log activity:", err));
+      }
+    }
 
     successResponse(res, transformApplication(updatedApplication as any), 'Application updated successfully');
   }
@@ -831,6 +884,23 @@ export const approveApplication = asyncHandler(
     logger.info(
       `Candidate created from application: ${candidate.email} with AI score: ${aiScore.overallScore}`
     );
+
+    // Log activity
+    if (req.user?.id) {
+      logActivity({
+        userId: req.user.id,
+        action: "application_approved",
+        resourceType: "application",
+        resourceId: id,
+        resourceName: `${candidate.firstName} ${candidate.lastName}`,
+        metadata: {
+          email: candidate.email,
+          jobId: jobId,
+          aiScore: aiScore.overallScore,
+          candidateId: candidate.id,
+        },
+      }).catch((err) => logger.error("Failed to log activity:", err));
+    }
 
     successResponse(
       res,

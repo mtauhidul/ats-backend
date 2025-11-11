@@ -8,6 +8,7 @@ import {
   successResponse,
 } from "../utils/helpers";
 import logger from "../utils/logger";
+import { logActivity } from "../services/activity.service";
 
 /**
  * Get all emails with filters and pagination
@@ -160,6 +161,22 @@ export const sendEmail = asyncHandler(
     logger.info(
       `Email sent via Resend: ${result.id} to ${Array.isArray(to) ? to.join(", ") : to}`
     );
+
+    // Log activity
+    if (req.user?.id) {
+      logActivity({
+        userId: req.user.id,
+        action: "sent_email",
+        resourceType: "email",
+        resourceId: result.emailId,
+        resourceName: subject,
+        metadata: {
+          to: Array.isArray(to) ? to : [to],
+          candidateId,
+          jobId,
+        },
+      }).catch((err) => logger.error("Failed to log activity:", err));
+    }
 
     successResponse(res, email, "Email sent successfully", 201);
   }

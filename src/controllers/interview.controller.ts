@@ -193,6 +193,24 @@ export const createInterview = asyncHandler(
 
     logger.info(`Interview created: ${interview!.title} for candidate ${candidate.email} by ${req.user?.email}`);
 
+    // Log activity
+    if (req.user?.id && interview) {
+      await logActivity({
+        userId: req.user.id,
+        action: "scheduled_interview",
+        resourceType: "interview",
+        resourceId: interviewId,
+        resourceName: interview.title || "Interview",
+        metadata: {
+          candidateId: data.candidateId,
+          candidateName: `${candidate.firstName} ${candidate.lastName}`,
+          jobId: data.jobId,
+          interviewType: data.interviewType,
+          scheduledAt: data.scheduledAt,
+        },
+      });
+    }
+
     successResponse(res, interview, 'Interview scheduled successfully', 201);
   }
 );

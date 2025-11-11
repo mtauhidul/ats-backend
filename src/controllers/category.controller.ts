@@ -81,6 +81,20 @@ export const deleteCategory = asyncHandler(
     const category = await categoryService.findById(req.params.id);
     if (!category) throw new NotFoundError('Category not found');
 
+    // Check if category is in use by any jobs
+    const { jobService } = require('../services/firestore');
+    
+    const allJobs = await jobService.find([]);
+    const jobsWithCategory = allJobs.filter((j: any) => 
+      j.categoryIds && Array.isArray(j.categoryIds) && j.categoryIds.includes(req.params.id)
+    );
+    
+    if (jobsWithCategory.length > 0) {
+      throw new CustomValidationError(
+        `Cannot delete category "${category.name}" because it is currently used by ${jobsWithCategory.length} job(s). Please remove the category from all jobs first.`
+      );
+    }
+
     await categoryService.delete(req.params.id);
     logger.info(`Category deleted: ${category.name}`);
     successResponse(res, null, 'Category deleted successfully');

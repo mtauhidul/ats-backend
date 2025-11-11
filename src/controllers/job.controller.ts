@@ -16,6 +16,7 @@ import {
   successResponse,
 } from "../utils/helpers";
 import logger from "../utils/logger";
+import { logActivity } from "../services/activity.service";
 
 /**
  * Sanitize job data to ensure IDs are strings, not populated objects
@@ -100,6 +101,21 @@ export const createJob = asyncHandler(
     }
 
     logger.info(`Job created: ${job.title} by user ${req.user?.id}`);
+
+    // Log activity
+    if (req.user?.id) {
+      logActivity({
+        userId: req.user.id,
+        action: "created_job",
+        resourceType: "job",
+        resourceId: jobId,
+        resourceName: job.title,
+        metadata: {
+          clientId: sanitizedData.clientId,
+          status: job.status,
+        },
+      }).catch((err) => logger.error("Failed to log activity:", err));
+    }
 
     successResponse(res, job, "Job created successfully", 201);
   }
@@ -469,6 +485,41 @@ export const updateJob = asyncHandler(
     }
 
     logger.info(`Job updated: ${job.title}`);
+
+    // Log activity
+    if (req.user?.id) {
+      // Check for specific status changes
+      if (sanitizedUpdates.status && sanitizedUpdates.status !== oldJob.status) {
+        const statusActionMap: Record<string, string> = {
+          'published': 'job_published',
+          'closed': 'job_closed',
+          'archived': 'job_archived',
+        };
+        
+        const action = statusActionMap[sanitizedUpdates.status] || 'updated_job';
+        
+        logActivity({
+          userId: req.user.id,
+          action: action,
+          resourceType: "job",
+          resourceId: id,
+          resourceName: job.title,
+          metadata: {
+            oldStatus: oldJob.status,
+            newStatus: sanitizedUpdates.status,
+          },
+        }).catch((err) => logger.error("Failed to log activity:", err));
+      } else {
+        // General update
+        logActivity({
+          userId: req.user.id,
+          action: "updated_job",
+          resourceType: "job",
+          resourceId: id,
+          resourceName: job.title,
+        }).catch((err) => logger.error("Failed to log activity:", err));
+      }
+    }
 
     successResponse(res, job, "Job updated successfully");
   }

@@ -20,6 +20,7 @@ import {
   successResponse,
 } from "../utils/helpers";
 import logger from "../utils/logger";
+import { logActivity } from "../services/activity.service";
 
 /**
  * Calculate statistics for a client
@@ -143,6 +144,20 @@ export const createClient = asyncHandler(
     logger.info(
       `Client created: ${client.companyName} by user ${req.user?.id}`
     );
+
+    // Log activity
+    if (req.user?.id) {
+      logActivity({
+        userId: req.user.id,
+        action: "created_client",
+        resourceType: "client",
+        resourceId: clientId,
+        resourceName: client.companyName,
+        metadata: {
+          industry: client.industry,
+        },
+      }).catch((err) => logger.error("Failed to log activity:", err));
+    }
 
     successResponse(res, client, "Client created successfully", 201);
   }
@@ -325,6 +340,17 @@ export const updateClient = asyncHandler(
     console.log("======================");
 
     logger.info(`Client updated: ${updatedClient?.companyName}`);
+
+    // Log activity
+    if (req.user?.id && updatedClient) {
+      logActivity({
+        userId: req.user.id,
+        action: "updated_client",
+        resourceType: "client",
+        resourceId: id,
+        resourceName: updatedClient.companyName,
+      }).catch((err) => logger.error("Failed to log activity:", err));
+    }
 
     successResponse(res, updatedClient, "Client updated successfully");
   }

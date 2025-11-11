@@ -26,6 +26,7 @@ import {
   successResponse,
 } from "../utils/helpers";
 import logger from "../utils/logger";
+import { logActivity } from "../services/activity.service";
 
 /**
  * Create new candidate (manual entry)
@@ -85,6 +86,22 @@ export const createCandidate = asyncHandler(
     logger.info(
       `Candidate created manually: ${candidate.email} for job ${job.title}`
     );
+
+    // Log activity
+    if (req.user?.id) {
+      logActivity({
+        userId: req.user.id,
+        action: "created_candidate",
+        resourceType: "candidate",
+        resourceId: candidateId,
+        resourceName: `${candidate.firstName} ${candidate.lastName}`,
+        metadata: {
+          jobId: data.jobId,
+          jobTitle: job.title,
+          email: candidate.email,
+        },
+      }).catch((err) => logger.error("Failed to log activity:", err));
+    }
 
     successResponse(
       res,
@@ -470,6 +487,46 @@ export const updateCandidate = asyncHandler(
 
     logger.info(`Candidate updated: ${updatedCandidate?.email}`);
 
+    // Log activity
+    if (req.user?.id && updatedCandidate) {
+      const activityMetadata: any = {};
+      
+      // Track specific changes
+      if ((updates as any).status && (updates as any).status !== (candidate as any).status) {
+        activityMetadata.oldStatus = (candidate as any).status;
+        activityMetadata.newStatus = (updates as any).status;
+        
+        // Log separate activity for status change
+        logActivity({
+          userId: req.user.id,
+          action: "candidate_status_changed",
+          resourceType: "candidate",
+          resourceId: id,
+          resourceName: `${updatedCandidate.firstName} ${updatedCandidate.lastName}`,
+          metadata: activityMetadata,
+        }).catch((err) => logger.error("Failed to log activity:", err));
+      } else if ((updates as any).currentPipelineStageId) {
+        // Log stage change
+        logActivity({
+          userId: req.user.id,
+          action: "candidate_stage_changed",
+          resourceType: "candidate",
+          resourceId: id,
+          resourceName: `${updatedCandidate.firstName} ${updatedCandidate.lastName}`,
+          metadata: { stageId: (updates as any).currentPipelineStageId },
+        }).catch((err) => logger.error("Failed to log activity:", err));
+      } else {
+        // General update
+        logActivity({
+          userId: req.user.id,
+          action: "updated_candidate",
+          resourceType: "candidate",
+          resourceId: id,
+          resourceName: `${updatedCandidate.firstName} ${updatedCandidate.lastName}`,
+        }).catch((err) => logger.error("Failed to log activity:", err));
+      }
+    }
+
     // Send assignment notification email if assignedTo changed
     if (isAssignmentChanged && newAssignedTo) {
       try {
@@ -499,6 +556,21 @@ export const updateCandidate = asyncHandler(
           logger.info(
             `Candidate assignment notification email sent to ${assignedUser.email}`
           );
+        }
+        
+        // Log assignment activity
+        if (req.user?.id && updatedCandidate) {
+          logActivity({
+            userId: req.user.id,
+            action: "candidate_assigned",
+            resourceType: "candidate",
+            resourceId: id,
+            resourceName: `${updatedCandidate.firstName} ${updatedCandidate.lastName}`,
+            metadata: {
+              assignedTo: newAssignedTo,
+              assignedToName: `${assignedUser?.firstName} ${assignedUser?.lastName}`,
+            },
+          }).catch((err) => logger.error("Failed to log activity:", err));
         }
       } catch (emailError) {
         // Log error but don't fail the request
@@ -571,6 +643,21 @@ export const moveCandidateStage = asyncHandler(
     const updatedCandidate = await candidateService.findById(id);
 
     logger.info(`Candidate ${candidate.email} moved to stage: ${newStage}`);
+
+    // Log activity
+    if (req.user?.id && updatedCandidate) {
+      logActivity({
+        userId: req.user.id,
+        action: "candidate_stage_changed",
+        resourceType: "candidate",
+        resourceId: id,
+        resourceName: `${updatedCandidate.firstName} ${updatedCandidate.lastName}`,
+        metadata: { 
+          stageId: newStage,
+          notes: notes ? "Added notes" : undefined,
+        },
+      }).catch((err) => logger.error("Failed to log activity:", err));
+    }
 
     successResponse(
       res,
