@@ -29,7 +29,8 @@ async function calculateClientStatistics(clientId: string) {
   const jobs = await jobService.findByClient(clientId);
 
   const totalJobs = jobs.length;
-  const activeJobs = jobs.filter((j) => j.status === "open").length;
+  // Active jobs are those with 'open' or 'on_hold' status
+  const activeJobs = jobs.filter((j) => j.status === "open" || j.status === "on_hold").length;
   const closedJobs = jobs.filter((j) => j.status === "closed").length;
   const draftJobs = jobs.filter((j) => j.status === "draft").length;
 
@@ -345,12 +346,18 @@ export const deleteClient = asyncHandler(
     // Check if there are associated jobs
     const jobs = await jobService.findByClient(id);
 
-    if (jobs.length > 0) {
+    // Check for jobs in active phase (open or on_hold status)
+    const activeJobs = jobs.filter((job: any) => 
+      job.status === 'open' || job.status === 'on_hold'
+    );
+
+    if (activeJobs.length > 0) {
       throw new CustomValidationError(
-        `Cannot delete client with ${jobs.length} active jobs. Please remove or reassign the jobs first.`
+        `Cannot delete client with ${activeJobs.length} active job${activeJobs.length > 1 ? 's' : ''} (status: open or on_hold). Please close or cancel all active jobs before deleting the client.`
       );
     }
 
+    // If there are only draft, closed, or cancelled jobs, allow deletion
     await clientService.delete(id);
 
     logger.info(`Client deleted: ${client.companyName}`);
