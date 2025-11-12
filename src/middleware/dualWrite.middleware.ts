@@ -58,13 +58,7 @@ export async function dualWriteCandidate(
   }
 
   try {
-    const companyId = candidateData.companyId;
-    if (!companyId) {
-      logger.warn("No companyId found for candidate dual write");
-      return;
-    }
-
-    const candidateService = new CandidateFirestoreService(companyId);
+    const candidateService = new CandidateFirestoreService();
 
     switch (operation) {
       case "create":
@@ -119,13 +113,7 @@ export async function dualWriteJob(
   }
 
   try {
-    const companyId = jobData.companyId;
-    if (!companyId) {
-      logger.warn("No companyId found for job dual write");
-      return;
-    }
-
-    const jobService = new JobFirestoreService(companyId);
+    const jobService = new JobFirestoreService();
 
     switch (operation) {
       case "create":
