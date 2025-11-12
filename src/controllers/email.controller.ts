@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { emailService } from "../services/firestore";
-import resendService from "../services/resend.service";
+import { emailService, emailAccountService } from "../services/firestore";
+import smtpService from "../services/smtp.service";
 import { NotFoundError } from "../utils/errors";
 import {
   asyncHandler,
@@ -121,11 +121,12 @@ export const getEmailById = asyncHandler(
 );
 
 /**
- * Send new email
+ * Send new email via SMTP
  */
 export const sendEmail = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const {
+      from, // Email account to send from
       to,
       subject,
       body,
@@ -137,29 +138,63 @@ export const sendEmail = asyncHandler(
       clientId,
       applicationId,
       interviewId,
+      inReplyTo, // For threading
+      references, // For threading
     } = req.body;
 
-    // Send email via Resend service (this will also save to database)
-    const result = await resendService.sendEmail({
+    // Get first active email account if 'from' not provided
+    let fromEmail = from;
+    if (!fromEmail) {
+      const activeAccounts = await emailAccountService.findActive();
+      if (activeAccounts.length === 0) {
+        throw new Error('No active email account found. Please configure an email account first.');
+      }
+      fromEmail = activeAccounts[0].email;
+    }
+
+    // Send email via SMTP
+    const result = await smtpService.sendSMTPEmail({
+      from: fromEmail,
       to,
       subject,
-      body,
-      bodyHtml,
+      html: bodyHtml || body,
+      text: body,
       cc,
       bcc,
+      inReplyTo,
+      references,
+    });
+
+    // Save to database
+    const emailId = await emailService.create({
+      direction: 'outbound',
+      from: fromEmail,
+      to: Array.isArray(to) ? to : [to],
+      cc,
+      bcc,
+      subject,
+      body: body || bodyHtml,
+      bodyHtml,
+      status: 'sent',
+      sentAt: new Date(),
+      messageId: result.messageId,
+      inReplyTo,
+      threadId: inReplyTo || result.messageId,
       candidateId,
       jobId,
       clientId,
       applicationId,
       interviewId,
       sentBy: req.user?.id,
-    });
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any);
 
-    // Fetch the created email record with populated references
-    const email = await emailService.findById(result.emailId);
+    // Fetch the created email record
+    const email = await emailService.findById(emailId);
 
     logger.info(
-      `Email sent via Resend: ${result.id} to ${Array.isArray(to) ? to.join(", ") : to}`
+      `Email sent via SMTP: ${result.messageId} from ${fromEmail} to ${Array.isArray(to) ? to.join(", ") : to}`
     );
 
     // Log activity
@@ -168,9 +203,10 @@ export const sendEmail = asyncHandler(
         userId: req.user.id,
         action: "sent_email",
         resourceType: "email",
-        resourceId: result.emailId,
+        resourceId: emailId,
         resourceName: subject,
         metadata: {
+          from: fromEmail,
           to: Array.isArray(to) ? to : [to],
           candidateId,
           jobId,
@@ -178,7 +214,7 @@ export const sendEmail = asyncHandler(
       }).catch((err) => logger.error("Failed to log activity:", err));
     }
 
-    successResponse(res, email, "Email sent successfully", 201);
+    successResponse(res, email, "Email sent successfully via SMTP", 201);
   }
 );
 

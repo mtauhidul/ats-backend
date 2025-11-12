@@ -108,7 +108,7 @@ class OpenAIService {
    * Based on OLD backend's proven pattern with low temperature and JSON enforcement
    */
   async parseResume(resumeText: string, maxRetries: number = 3): Promise<ParsedResume> {
-    let lastError: any;
+    let lastError: Error | undefined;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -296,7 +296,8 @@ IMPORTANT:
     
     // All retries failed
     logger.error(`❌ All ${maxRetries} parsing attempts failed`);
-    throw new InternalServerError(`Failed to parse resume after ${maxRetries} attempts: ${lastError.message}`);
+    const errorMessage = lastError?.message || 'Unknown error occurred during parsing';
+    throw new InternalServerError(`Failed to parse resume after ${maxRetries} attempts: ${errorMessage}`);
   }
 
   /**

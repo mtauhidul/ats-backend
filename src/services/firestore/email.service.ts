@@ -28,6 +28,7 @@ export interface IEmail {
     | "complained"
     | "failed"
     | "received"
+    | "processed"
     | "draft";
   sentAt?: Date;
   receivedAt?: Date;

@@ -5,19 +5,26 @@ export interface IEmailAccount {
   name: string;
   email: string;
   provider: "gmail" | "outlook" | "custom";
+  password: string; // Unified password for IMAP/SMTP (encrypted)
 
-  // IMAP Settings
+  // IMAP Settings (for receiving)
   imapHost: string;
   imapPort: number;
   imapUser: string;
-  imapPassword: string; // Should be encrypted
+  imapPassword: string; // Deprecated - use 'password' instead
   imapTls: boolean;
+
+  // SMTP Settings (for sending) - optional, will auto-detect if not provided
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpSecure?: boolean; // true for 465, false for other ports
 
   // Automation Settings
   isActive: boolean;
   autoProcessResumes: boolean;
   defaultApplicationStatus: string;
   lastChecked?: Date;
+  lastEmailTimestamp?: Date; // 🔥 Hybrid optimization: Last email date processed
 
   // Metadata
   createdBy: string;
@@ -48,6 +55,17 @@ class EmailAccountService extends FirestoreBaseService<IEmailAccount> {
 
   async updateLastChecked(id: string): Promise<void> {
     await this.update(id, {
+      lastChecked: new Date(),
+      updatedAt: new Date(),
+    });
+  }
+
+  /**
+   * 🔥 Hybrid optimization: Update last email timestamp
+   */
+  async updateLastEmailTimestamp(id: string, timestamp: Date): Promise<void> {
+    await this.update(id, {
+      lastEmailTimestamp: timestamp,
       lastChecked: new Date(),
       updatedAt: new Date(),
     });

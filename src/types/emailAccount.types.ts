@@ -41,15 +41,17 @@ export const updateEmailAccountSchema = z.object({
     smtpPassword: z.string().min(1, 'SMTP password is required').optional(),
     smtpTls: z.boolean().optional(),
     isActive: z.boolean().optional(),
+    autoProcessResumes: z.boolean().optional(),
+    defaultApplicationStatus: z.string().optional(),
   }),
   params: z.object({
-    id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ID format'),
+    id: z.string().min(1, 'ID is required'),
   }),
 });
 
 export const emailAccountIdSchema = z.object({
   params: z.object({
-    id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ID format'),
+    id: z.string().min(1, 'ID is required'),
   }),
 });
 

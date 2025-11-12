@@ -133,6 +133,42 @@ export const getCandidates = asyncHandler(
     // Fetch all candidates (Firestore doesn't support complex queries like MongoDB)
     let allCandidates = await candidateService.find([]);
 
+    // 🔒 RBAC: Non-admin users can only see candidates assigned to them
+    const userRole = (req.user as any)?.role;
+    const userId = (req.user as any)?.id;
+    
+    logger.info(`🔍 RBAC Check - User: ${userId}, Role: ${userRole}, Total candidates: ${allCandidates.length}`);
+    
+    if (userRole !== 'admin' && userId) {
+      const beforeFilter = allCandidates.length;
+      
+      // Debug: Log first few candidates' assignedTo values
+      logger.info(`📊 Sample candidates assignedTo: ${JSON.stringify(allCandidates.slice(0, 3).map((c: any) => ({ 
+        id: c.id, 
+        name: `${c.firstName} ${c.lastName}`,
+        assignedTo: c.assignedTo 
+      })))}`);
+      
+      allCandidates = allCandidates.filter((c: any) => {
+        // Check if assignedTo matches the current user
+        if (typeof c.assignedTo === 'string') {
+          const matches = c.assignedTo === userId;
+          if (matches) logger.info(`✅ Matched by string: ${c.firstName} ${c.lastName}`);
+          return matches;
+        } else if (c.assignedTo && typeof c.assignedTo === 'object') {
+          const matches = c.assignedTo.id === userId || c.assignedTo._id === userId;
+          if (matches) logger.info(`✅ Matched by object: ${c.firstName} ${c.lastName}`);
+          return matches;
+        }
+        // If no assignedTo, candidate is not visible to non-admin users
+        logger.info(`❌ No assignedTo: ${c.firstName} ${c.lastName}`);
+        return false;
+      });
+      logger.info(`🔒 RBAC filter applied: ${userRole} user ${userId} can see ${allCandidates.length}/${beforeFilter} candidates`);
+    } else {
+      logger.info(`👑 Admin user or no userId - showing all ${allCandidates.length} candidates`);
+    }
+
     // Apply filters in memory
     if (jobId) {
       allCandidates = allCandidates.filter((c: any) =>
@@ -336,6 +372,25 @@ export const getCandidateById = asyncHandler(
       throw new NotFoundError("Candidate not found");
     }
 
+    // 🔒 RBAC: Non-admin users can only view candidates assigned to them
+    const userRole = (req.user as any)?.role;
+    const userId = (req.user as any)?.id;
+    
+    if (userRole !== 'admin' && userId) {
+      const assignedTo = (candidate as any).assignedTo;
+      let isAssigned = false;
+      
+      if (typeof assignedTo === 'string') {
+        isAssigned = assignedTo === userId;
+      } else if (assignedTo && typeof assignedTo === 'object') {
+        isAssigned = assignedTo.id === userId || assignedTo._id === userId;
+      }
+      
+      if (!isAssigned) {
+        throw new NotFoundError("Candidate not found");
+      }
+    }
+
     // Get the current pipeline stage name if available
     let currentStageInfo = null;
     if ((candidate as any).currentStage) {
@@ -381,6 +436,25 @@ export const updateCandidate = asyncHandler(
 
     if (!candidate) {
       throw new NotFoundError("Candidate not found");
+    }
+
+    // 🔒 RBAC: Non-admin users can only update candidates assigned to them
+    const userRole = (req.user as any)?.role;
+    const userId = (req.user as any)?.id;
+    
+    if (userRole !== 'admin' && userId) {
+      const assignedTo = (candidate as any).assignedTo;
+      let isAssigned = false;
+      
+      if (typeof assignedTo === 'string') {
+        isAssigned = assignedTo === userId;
+      } else if (assignedTo && typeof assignedTo === 'object') {
+        isAssigned = assignedTo.id === userId || assignedTo._id === userId;
+      }
+      
+      if (!isAssigned) {
+        throw new NotFoundError("Candidate not found");
+      }
     }
 
     // Track if assignedTo is changing (accessing from req.body since it's not in the type)
@@ -593,6 +667,25 @@ export const deleteCandidate = asyncHandler(
 
     if (!candidate) {
       throw new NotFoundError("Candidate not found");
+    }
+
+    // 🔒 RBAC: Non-admin users can only delete candidates assigned to them
+    const userRole = (req.user as any)?.role;
+    const userId = (req.user as any)?.id;
+    
+    if (userRole !== 'admin' && userId) {
+      const assignedTo = (candidate as any).assignedTo;
+      let isAssigned = false;
+      
+      if (typeof assignedTo === 'string') {
+        isAssigned = assignedTo === userId;
+      } else if (assignedTo && typeof assignedTo === 'object') {
+        isAssigned = assignedTo.id === userId || assignedTo._id === userId;
+      }
+      
+      if (!isAssigned) {
+        throw new NotFoundError("Candidate not found");
+      }
     }
 
     // Check if candidate has any team members assigned
@@ -891,7 +984,24 @@ export const getCandidatesWithoutPipeline = asyncHandler(
     }
 
     // Find candidates for this job that have no pipeline stage assigned
-    const allCandidates = await candidateService.findByJobId(jobId as string);
+    let allCandidates = await candidateService.findByJobId(jobId as string);
+    
+    // 🔒 RBAC: Non-admin users can only see candidates assigned to them
+    const userRole = (req.user as any)?.role;
+    const userId = (req.user as any)?.id;
+    
+    if (userRole !== 'admin' && userId) {
+      allCandidates = allCandidates.filter((c: any) => {
+        const assignedTo = c.assignedTo;
+        if (typeof assignedTo === 'string') {
+          return assignedTo === userId;
+        } else if (assignedTo && typeof assignedTo === 'object') {
+          return assignedTo.id === userId || assignedTo._id === userId;
+        }
+        return false;
+      });
+    }
+    
     const candidates = allCandidates.filter(
       (c: any) => !c.currentPipelineStageId || c.currentPipelineStageId === null
     );
@@ -917,6 +1027,22 @@ export const getCandidateStats = asyncHandler(
 
     // Fetch all candidates
     let allCandidates = await candidateService.find([]);
+
+    // 🔒 RBAC: Non-admin users can only see stats for candidates assigned to them
+    const userRole = (req.user as any)?.role;
+    const userId = (req.user as any)?.id;
+    
+    if (userRole !== 'admin' && userId) {
+      allCandidates = allCandidates.filter((c: any) => {
+        const assignedTo = c.assignedTo;
+        if (typeof assignedTo === 'string') {
+          return assignedTo === userId;
+        } else if (assignedTo && typeof assignedTo === 'object') {
+          return assignedTo.id === userId || assignedTo._id === userId;
+        }
+        return false;
+      });
+    }
 
     // Filter by job if specified
     if (jobId) {

@@ -48,6 +48,10 @@ export interface IApplication {
   validationScore?: number;
   validationReason?: string;
 
+  // AI Check Status (for email automation)
+  aiCheckStatus?: "pending" | "completed" | "failed";
+  aiCheckCompletedAt?: Date;
+
   // Candidate Details (extracted or calculated)
   yearsOfExperience?: number;
   currentTitle?: string;

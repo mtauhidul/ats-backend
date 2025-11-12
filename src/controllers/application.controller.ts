@@ -32,6 +32,11 @@ const transformApplication = (app: IApplication & { id: string }) => {
     targetClientId: app.clientId || null,
     submittedAt: app.appliedAt || app.createdAt,
     lastUpdated: app.updatedAt,
+    // Transform AI validation fields to frontend format
+    aiAnalysis: {
+      isValid: app.isValidResume ?? false, // Use AI validation result, default to false if not validated
+      summary: app.validationReason || app.parsedData?.summary || 'No AI analysis available',
+    },
   };
 };
 
@@ -785,9 +790,14 @@ export const approveApplication = asyncHandler(
         candidateData.experience = (application as any).parsedData.experience.map((exp: any) => {
           let company = exp.company || '';
           
+          // Convert description to string if it's an array
+          const descriptionText = Array.isArray(exp.description) 
+            ? exp.description.join(' ') 
+            : (exp.description || '');
+          
           // If company is empty, try to extract from description or title
-          if (!company && exp.description) {
-            const companyMatch = exp.description.match(/(?:at|@|for)\s+([A-Z][a-zA-Z\s&]+?)(?:\s*[-–]|\s*,|\s*$)/);
+          if (!company && descriptionText) {
+            const companyMatch = descriptionText.match(/(?:at|@|for)\s+([A-Z][a-zA-Z\s&]+?)(?:\s*[-–]|\s*,|\s*$)/);
             if (companyMatch) {
               company = companyMatch[1].trim();
             }
@@ -797,7 +807,7 @@ export const approveApplication = asyncHandler(
             company,
             title: exp.title || '',
             duration: exp.duration || '',
-            description: exp.description || '',
+            description: descriptionText,
           };
         });
         
