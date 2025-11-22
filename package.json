@@ -21,7 +21,10 @@
     "seed:demo-data": "ts-node scripts/add-demo-data-to-client.ts",
     "migrate": "ts-node scripts/migrate.ts",
     "analyze:queries": "ts-node scripts/analyze-slow-queries.ts",
-    "cleanup:data": "ts-node scripts/run-data-cleanup.ts"
+    "cleanup:data": "ts-node scripts/run-data-cleanup.ts",
+    "fix:apps": "ts-node scripts/fix-corrupted-applications.ts",
+    "fix:apps:dry": "ts-node scripts/fix-corrupted-applications.ts --dry-run",
+    "fix:apps:auto": "ts-node scripts/fix-corrupted-applications.ts --fix"
   },
   "keywords": [
     "ats",
@@ -35,11 +38,14 @@
     "node": "20.x"
   },
   "dependencies": {
+    "@adobe/pdfservices-node-sdk": "^4.1.0",
     "@affinda/affinda": "^7.7.0",
     "@clerk/clerk-sdk-node": "^5.0.0",
     "@react-email/components": "^0.5.7",
     "@types/nodemailer": "^7.0.3",
     "@types/sharp": "^0.31.1",
+    "adm-zip": "^0.5.16",
+    "axios": "^1.6.2",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.0.0",
     "compression": "^1.7.4",
@@ -67,10 +73,10 @@
     "react-email": "^4.3.2",
     "resend": "^6.4.0-canary.0",
     "winston": "^3.11.0",
-    "zod": "^3.22.4",
-    "axios": "^1.6.2"
+    "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.7.5",
     "@types/cors": "^2.8.17",
@@ -96,5 +102,6 @@
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.3.3"
-  }
+  },
+  "packageManager": "pnpm@10.18.2+sha512.9fb969fa749b3ade6035e0f109f0b8a60b5d08a1a87fdf72e337da90dcc93336e2280ca4e44f2358a649b83c17959e9993e777c2080879f3801e6f0d999ad3dd"
 }

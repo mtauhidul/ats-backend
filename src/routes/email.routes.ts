@@ -429,15 +429,6 @@ const checkEmailsForAllAccounts = async () => {
               const videoLinkMatch = email.body.match(/(https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|vimeo\.com\/|loom\.com\/share\/)[^\s]+)/i);
               const videoLink = videoLinkMatch ? videoLinkMatch[0] : null;
               
-              // Extract candidate name from email (remove quotes and clean up)
-              let nameFromEmail = email.from.split('<')[0].trim();
-              // Remove surrounding quotes if present
-              nameFromEmail = nameFromEmail.replace(/^["']|["']$/g, '');
-              const candidateName = nameFromEmail || resumeAttachment.filename.replace(/\.(pdf|doc|docx)$/i, '');
-              const nameParts = candidateName.split(' ').filter(Boolean);
-              let firstName = nameParts[0] || 'Unknown';
-              let lastName = nameParts.slice(1).join(' ') || 'Candidate';
-              
               try {
                 // ✅ STEP 2: Upload resume to Cloudinary via public API
                 logger.info(`Uploading resume: ${resumeAttachment.filename}`);
@@ -469,11 +460,20 @@ const checkEmailsForAllAccounts = async () => {
                 }
                 
                 // ✅ STEP 4: Parse resume with OpenAI and validate
+                // Initialize variables with fresh values per iteration
                 let parsedData = null;
                 let resumeRawText = '';
                 let isValidResume = null;
                 let validationScore = null;
                 let validationReason = null;
+                
+                // Extract default candidate name from email (fallback only)
+                let nameFromEmail = email.from.split('<')[0].trim();
+                nameFromEmail = nameFromEmail.replace(/^["']|["']$/g, '');
+                const candidateName = nameFromEmail || resumeAttachment.filename.replace(/\.(pdf|doc|docx)$/i, '');
+                const nameParts = candidateName.split(' ').filter(Boolean);
+                let firstName = nameParts[0] || 'Unknown';
+                let lastName = nameParts.slice(1).join(' ') || 'Candidate';
                 
                 try {
                   const openaiService = require('../services/openai.service').default;
@@ -482,6 +482,14 @@ const checkEmailsForAllAccounts = async () => {
                   const fileType = resumeAttachment.filename.toLowerCase().endsWith('.pdf') ? 'pdf' :
                                   resumeAttachment.filename.toLowerCase().endsWith('.docx') ? 'docx' : 'doc';
                   resumeRawText = await openaiService.extractTextFromResume(resumeAttachment.content, fileType);
+                  
+                  // ⚠️ CRITICAL: If text extraction fails, don't create application
+                  if (!resumeRawText || resumeRawText.trim().length < 50) {
+                    logger.error(`❌ Resume text extraction failed or too short (${resumeRawText?.length || 0} chars) for ${senderEmail}`);
+                    throw new Error('Resume text extraction failed or content too short');
+                  }
+                  
+                  logger.info(`✅ Extracted ${resumeRawText.length} characters from resume`);
                   
                   // Then parse the extracted text
                   parsedData = await openaiService.parseResume(resumeRawText);
@@ -517,8 +525,12 @@ const checkEmailsForAllAccounts = async () => {
                     lastName = parsedData.personalInfo.lastName;
                   }
                 } catch (parseError: any) {
-                  logger.error(`Error parsing resume:`, parseError?.message || parseError);
-                  // Continue without parsed data
+                  logger.error(`❌ CRITICAL: Resume parsing completely failed for ${senderEmail}: ${parseError?.message || parseError}`);
+                  logger.error(`   - Resume file: ${resumeAttachment.filename}`);
+                  logger.error(`   - Extracted text length: ${resumeRawText?.length || 0}`);
+                  logger.error(`   - Skipping application creation to prevent data corruption`);
+                  // Skip this email - don't create application with corrupted/missing data
+                  continue;
                 }
                 
                 // ✅ STEP 5: Create application via applicationService with proper source
@@ -1111,15 +1123,6 @@ router.post("/automation/bulk-import", requireRole("admin"), async (req, res): P
           continue;
         }
 
-        // Extract candidate name (remove quotes and clean up)
-        let nameFromEmail = email.from.split('<')[0].trim();
-        // Remove surrounding quotes if present
-        nameFromEmail = nameFromEmail.replace(/^["']|["']$/g, '');
-        const candidateName = nameFromEmail || resumeAttachment.filename.replace(/\.(pdf|doc|docx)$/i, '');
-        const nameParts = candidateName.split(' ').filter(Boolean);
-        let firstName = nameParts[0] || 'Unknown';
-        let lastName = nameParts.slice(1).join(' ') || 'Candidate';
-
         try {
           // Upload resume
           logger.info(`📤 Uploading resume: ${resumeAttachment.filename}`);
@@ -1151,11 +1154,20 @@ router.post("/automation/bulk-import", requireRole("admin"), async (req, res): P
           }
 
           // Parse resume and validate
+          // Initialize variables with fresh values per iteration
           let parsedData = null;
           let resumeRawText = '';
           let isValidResume = null;
           let validationScore = null;
           let validationReason = null;
+          
+          // Extract default candidate name from email (fallback only)
+          let nameFromEmail = email.from.split('<')[0].trim();
+          nameFromEmail = nameFromEmail.replace(/^["']|["']$/g, '');
+          const candidateName = nameFromEmail || resumeAttachment.filename.replace(/\.(pdf|doc|docx)$/i, '');
+          const nameParts = candidateName.split(' ').filter(Boolean);
+          let firstName = nameParts[0] || 'Unknown';
+          let lastName = nameParts.slice(1).join(' ') || 'Candidate';
           
           try {
             const openaiService = require('../services/openai.service').default;
@@ -1164,6 +1176,14 @@ router.post("/automation/bulk-import", requireRole("admin"), async (req, res): P
             const fileType = resumeAttachment.filename.toLowerCase().endsWith('.pdf') ? 'pdf' :
                             resumeAttachment.filename.toLowerCase().endsWith('.docx') ? 'docx' : 'doc';
             resumeRawText = await openaiService.extractTextFromResume(resumeAttachment.content, fileType);
+            
+            // ⚠️ CRITICAL: If text extraction fails, don't create application
+            if (!resumeRawText || resumeRawText.trim().length < 50) {
+              logger.error(`❌ Resume text extraction failed or too short (${resumeRawText?.length || 0} chars) for ${senderEmail}`);
+              throw new Error('Resume text extraction failed or content too short');
+            }
+            
+            logger.info(`✅ Extracted ${resumeRawText.length} characters from resume`);
             
             // Then parse the extracted text
             parsedData = await openaiService.parseResume(resumeRawText);
@@ -1198,7 +1218,13 @@ router.post("/automation/bulk-import", requireRole("admin"), async (req, res): P
               lastName = parsedData.personalInfo.lastName;
             }
           } catch (parseError: any) {
-            logger.error(`Error parsing resume:`, parseError?.message || parseError);
+            logger.error(`❌ CRITICAL: Resume parsing completely failed for ${senderEmail}: ${parseError?.message || parseError}`);
+            logger.error(`   - Resume file: ${resumeAttachment.filename}`);
+            logger.error(`   - Extracted text length: ${resumeRawText?.length || 0}`);
+            logger.error(`   - Skipping application creation to prevent data corruption`);
+            // Skip this email - don't create application with corrupted/missing data
+            skipped++;
+            continue;
           }
 
           // Create application

@@ -42,6 +42,12 @@ export const config = {
     useAffinda: process.env.USE_AFFINDA_PARSER === "true",
   },
 
+  // Adobe PDF Services (Fallback for PDF text extraction)
+  adobe: {
+    clientId: process.env.ADOBE_CLIENT_ID || "",
+    clientSecret: process.env.ADOBE_CLIENT_SECRET || "",
+  },
+
   // Zoom
   zoom: {
     accountId: process.env.ZOOM_ACCOUNT_ID || "",
