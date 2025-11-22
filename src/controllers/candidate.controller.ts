@@ -1,9 +1,10 @@
 import { Request, Response } from "express";
+import { logActivity } from "../services/activity.service";
 import { sendAssignmentEmail } from "../services/email.service";
 import {
   candidateService,
-  jobService,
   clientService,
+  jobService,
   pipelineService,
   userService,
 } from "../services/firestore";
@@ -26,7 +27,6 @@ import {
   successResponse,
 } from "../utils/helpers";
 import logger from "../utils/logger";
-import { logActivity } from "../services/activity.service";
 
 /**
  * Create new candidate (manual entry)
@@ -136,37 +136,50 @@ export const getCandidates = asyncHandler(
     // 🔒 RBAC: Non-admin users can only see candidates assigned to them
     const userRole = (req.user as any)?.role;
     const userId = (req.user as any)?.id;
-    
-    logger.info(`🔍 RBAC Check - User: ${userId}, Role: ${userRole}, Total candidates: ${allCandidates.length}`);
-    
-    if (userRole !== 'admin' && userId) {
+
+    logger.info(
+      `🔍 RBAC Check - User: ${userId}, Role: ${userRole}, Total candidates: ${allCandidates.length}`
+    );
+
+    if (userRole !== "admin" && userId) {
       const beforeFilter = allCandidates.length;
-      
+
       // Debug: Log first few candidates' assignedTo values
-      logger.info(`📊 Sample candidates assignedTo: ${JSON.stringify(allCandidates.slice(0, 3).map((c: any) => ({ 
-        id: c.id, 
-        name: `${c.firstName} ${c.lastName}`,
-        assignedTo: c.assignedTo 
-      })))}`);
-      
+      logger.info(
+        `📊 Sample candidates assignedTo: ${JSON.stringify(
+          allCandidates.slice(0, 3).map((c: any) => ({
+            id: c.id,
+            name: `${c.firstName} ${c.lastName}`,
+            assignedTo: c.assignedTo,
+          }))
+        )}`
+      );
+
       allCandidates = allCandidates.filter((c: any) => {
         // Check if assignedTo matches the current user
-        if (typeof c.assignedTo === 'string') {
+        if (typeof c.assignedTo === "string") {
           const matches = c.assignedTo === userId;
-          if (matches) logger.info(`✅ Matched by string: ${c.firstName} ${c.lastName}`);
+          if (matches)
+            logger.info(`✅ Matched by string: ${c.firstName} ${c.lastName}`);
           return matches;
-        } else if (c.assignedTo && typeof c.assignedTo === 'object') {
-          const matches = c.assignedTo.id === userId || c.assignedTo._id === userId;
-          if (matches) logger.info(`✅ Matched by object: ${c.firstName} ${c.lastName}`);
+        } else if (c.assignedTo && typeof c.assignedTo === "object") {
+          const matches =
+            c.assignedTo.id === userId || c.assignedTo._id === userId;
+          if (matches)
+            logger.info(`✅ Matched by object: ${c.firstName} ${c.lastName}`);
           return matches;
         }
         // If no assignedTo, candidate is not visible to non-admin users
         logger.info(`❌ No assignedTo: ${c.firstName} ${c.lastName}`);
         return false;
       });
-      logger.info(`🔒 RBAC filter applied: ${userRole} user ${userId} can see ${allCandidates.length}/${beforeFilter} candidates`);
+      logger.info(
+        `🔒 RBAC filter applied: ${userRole} user ${userId} can see ${allCandidates.length}/${beforeFilter} candidates`
+      );
     } else {
-      logger.info(`👑 Admin user or no userId - showing all ${allCandidates.length} candidates`);
+      logger.info(
+        `👑 Admin user or no userId - showing all ${allCandidates.length} candidates`
+      );
     }
 
     // Apply filters in memory
@@ -264,6 +277,22 @@ export const getCandidates = asyncHandler(
         const stageData = stageMap.get(candidate.currentPipelineStageId);
         if (stageData) {
           candidate.currentStage = stageData;
+        } else {
+          // Debug: Log when stage is not found
+          logger.warn(
+            `Stage ID not found in pipelines: ${candidate.currentPipelineStageId}`
+          );
+          logger.debug(
+            `Available stage IDs: ${Array.from(stageMap.keys()).join(", ")}`
+          );
+
+          // Stage ID not found in any pipeline - create fallback stage object
+          candidate.currentStage = {
+            id: candidate.currentPipelineStageId,
+            name: "Unknown Stage",
+            color: "#6B7280",
+            order: 0,
+          };
         }
       }
       return candidate;
@@ -274,7 +303,7 @@ export const getCandidates = asyncHandler(
       ...new Set(
         candidatesWithStage
           .flatMap((c: any) => c.jobIds || [])
-          .filter((id: any) => id && typeof id === 'string')
+          .filter((id: any) => id && typeof id === "string")
       ),
     ];
 
@@ -282,16 +311,16 @@ export const getCandidates = asyncHandler(
     if (jobIds.length > 0) {
       try {
         const jobs = await Promise.all(
-          (jobIds as string[]).map(id => jobService.findById(id))
+          (jobIds as string[]).map((id) => jobService.findById(id))
         );
-        
+
         // Get all unique client IDs from jobs
         const clientIds = [
           ...new Set(
             jobs
-              .filter(job => job !== null && (job as any).clientId)
-              .map(job => (job as any).clientId)
-              .filter((id: any) => id && typeof id === 'string')
+              .filter((job) => job !== null && (job as any).clientId)
+              .map((job) => (job as any).clientId)
+              .filter((id: any) => id && typeof id === "string")
           ),
         ];
 
@@ -299,19 +328,19 @@ export const getCandidates = asyncHandler(
         let clientsMap = new Map();
         if (clientIds.length > 0) {
           const clients = await Promise.all(
-            (clientIds as string[]).map(id => clientService.findById(id))
+            (clientIds as string[]).map((id) => clientService.findById(id))
           );
           clientsMap = new Map(
             clients
-              .filter(client => client !== null)
-              .map(client => [
+              .filter((client) => client !== null)
+              .map((client) => [
                 client!.id,
                 {
                   id: client!.id,
                   _id: client!.id,
                   companyName: (client as any).companyName,
                   logo: (client as any).logo,
-                }
+                },
               ])
           );
         }
@@ -319,17 +348,22 @@ export const getCandidates = asyncHandler(
         // Create jobs map with populated clients
         jobsMap = new Map(
           jobs
-            .filter(job => job !== null)
-            .map(job => {
+            .filter((job) => job !== null)
+            .map((job) => {
               const jobWithClient = { ...job };
-              if ((job as any).clientId && clientsMap.has((job as any).clientId)) {
-                (jobWithClient as any).clientId = clientsMap.get((job as any).clientId);
+              if (
+                (job as any).clientId &&
+                clientsMap.has((job as any).clientId)
+              ) {
+                (jobWithClient as any).clientId = clientsMap.get(
+                  (job as any).clientId
+                );
               }
               return [job!.id, jobWithClient];
             })
         );
       } catch (error) {
-        logger.warn('Failed to populate jobs with clients:', error);
+        logger.warn("Failed to populate jobs with clients:", error);
       }
     }
 
@@ -375,17 +409,17 @@ export const getCandidateById = asyncHandler(
     // 🔒 RBAC: Non-admin users can only view candidates assigned to them
     const userRole = (req.user as any)?.role;
     const userId = (req.user as any)?.id;
-    
-    if (userRole !== 'admin' && userId) {
+
+    if (userRole !== "admin" && userId) {
       const assignedTo = (candidate as any).assignedTo;
       let isAssigned = false;
-      
-      if (typeof assignedTo === 'string') {
+
+      if (typeof assignedTo === "string") {
         isAssigned = assignedTo === userId;
-      } else if (assignedTo && typeof assignedTo === 'object') {
+      } else if (assignedTo && typeof assignedTo === "object") {
         isAssigned = assignedTo.id === userId || assignedTo._id === userId;
       }
-      
+
       if (!isAssigned) {
         throw new NotFoundError("Candidate not found");
       }
@@ -393,15 +427,20 @@ export const getCandidateById = asyncHandler(
 
     // Get the current pipeline stage name if available
     let currentStageInfo = null;
-    if ((candidate as any).currentStage) {
+    // Check both currentPipelineStageId (new field) and currentStage (legacy field)
+    const stageIdToLookup =
+      (candidate as any).currentPipelineStageId ||
+      (candidate as any).currentStage;
+
+    if (stageIdToLookup) {
       const allPipelines = await pipelineService.find([]);
       const pipeline = allPipelines.find((p: any) =>
-        p.stages?.some((s: any) => s.id === (candidate as any).currentStage)
+        p.stages?.some((s: any) => (s.id || s._id) === stageIdToLookup)
       );
 
       if (pipeline) {
         const stage = pipeline.stages.find(
-          (s: any) => s.id === (candidate as any).currentStage
+          (s) => s.id === stageIdToLookup
         );
         if (stage) {
           currentStageInfo = {
@@ -412,11 +451,22 @@ export const getCandidateById = asyncHandler(
           };
         }
       }
+
+      // If stage not found in any pipeline, create fallback
+      if (!currentStageInfo) {
+        currentStageInfo = {
+          id: stageIdToLookup,
+          name: "Unknown Stage",
+          color: "#6B7280",
+          order: 0,
+        };
+      }
     }
 
     // Add currentStage to response
     const candidateData: any = { ...candidate };
     if (currentStageInfo) {
+      candidateData.currentStage = currentStageInfo;
       candidateData.currentStageInfo = currentStageInfo;
     }
 
@@ -441,17 +491,17 @@ export const updateCandidate = asyncHandler(
     // 🔒 RBAC: Non-admin users can only update candidates assigned to them
     const userRole = (req.user as any)?.role;
     const userId = (req.user as any)?.id;
-    
-    if (userRole !== 'admin' && userId) {
+
+    if (userRole !== "admin" && userId) {
       const assignedTo = (candidate as any).assignedTo;
       let isAssigned = false;
-      
-      if (typeof assignedTo === 'string') {
+
+      if (typeof assignedTo === "string") {
         isAssigned = assignedTo === userId;
-      } else if (assignedTo && typeof assignedTo === 'object') {
+      } else if (assignedTo && typeof assignedTo === "object") {
         isAssigned = assignedTo.id === userId || assignedTo._id === userId;
       }
-      
+
       if (!isAssigned) {
         throw new NotFoundError("Candidate not found");
       }
@@ -464,51 +514,75 @@ export const updateCandidate = asyncHandler(
       oldAssignedTo !== newAssignedTo && newAssignedTo !== undefined;
 
     // Handle rejection status update - update the specific job application
-    if ((updates as any).status === 'rejected' && (req.body as any).rejectedJobId) {
+    if (
+      (updates as any).status === "rejected" &&
+      (req.body as any).rejectedJobId
+    ) {
       const rejectedJobId = (req.body as any).rejectedJobId;
       const jobApplications = (candidate as any).jobApplications || [];
-      
+
       // Find and update the specific job application
       const updatedJobApplications = jobApplications.map((app: any) => {
-        if (app.jobId === rejectedJobId || app.jobId?.toString() === rejectedJobId) {
+        if (
+          app.jobId === rejectedJobId ||
+          app.jobId?.toString() === rejectedJobId
+        ) {
           return {
             ...app,
-            status: 'rejected',
-            lastStatusChange: new Date()
+            status: "rejected",
+            lastStatusChange: new Date(),
           };
         }
         return app;
       });
-      
+
       (updates as any).jobApplications = updatedJobApplications;
-      logger.info(`Updated job application status to rejected for job ${rejectedJobId}`);
+      logger.info(
+        `Updated job application status to rejected for job ${rejectedJobId}`
+      );
     }
 
-    // If currentPipelineStageId is being updated, also update jobApplications[0].currentStage
+    // If currentPipelineStageId is being updated, update the SPECIFIC job's stage in jobApplications
     if ((updates as any).currentPipelineStageId) {
       const newStageId = (updates as any).currentPipelineStageId;
-      
-      // Find the pipeline and stage name
-      const jobIds = (candidate as any).jobIds || [];
-      if (jobIds.length > 0) {
+      const targetJobId = (req.body as any).jobId; // CRITICAL: Must specify which job's stage is being updated
+
+      if (targetJobId) {
         try {
-          const pipeline = await pipelineService.findByJobId(jobIds[0]);
+          // Find the pipeline for this specific job
+          const pipeline = await pipelineService.findByJobId(targetJobId);
           if (pipeline && pipeline.stages) {
-            const newStage = pipeline.stages.find((s: any) => s.id === newStageId);
+            const newStage = pipeline.stages.find(
+              (s: any) => s.id === newStageId
+            );
             if (newStage) {
-              // Update jobApplications[0].currentStage with the stage name
+              // Update the SPECIFIC job application's currentStage
               const jobApplications = (candidate as any).jobApplications || [];
-              if (jobApplications.length > 0) {
-                jobApplications[0].currentStage = newStage.name;
-                jobApplications[0].lastStatusChange = new Date();
-                (updates as any).jobApplications = jobApplications;
-                logger.info(`Updated candidate stage to: ${newStage.name}`);
-              }
+              const updatedJobApplications = jobApplications.map((app: any) => {
+                const appJobId = app.jobId?.id || app.jobId?._id || app.jobId;
+                if (appJobId === targetJobId) {
+                  return {
+                    ...app,
+                    currentStage: newStageId, // Store stage ID, not name (for consistency)
+                    lastStatusChange: new Date(),
+                  };
+                }
+                return app;
+              });
+
+              (updates as any).jobApplications = updatedJobApplications;
+              logger.info(
+                `Updated candidate stage to: ${newStage.name} for job ${targetJobId}`
+              );
             }
           }
         } catch (error) {
-          logger.warn('Failed to update jobApplications.currentStage:', error);
+          logger.warn("Failed to update jobApplications.currentStage:", error);
         }
+      } else {
+        logger.warn(
+          "No jobId provided for stage update - cannot update job-specific stage"
+        );
       }
     }
 
@@ -526,6 +600,44 @@ export const updateCandidate = asyncHandler(
       }
     }
 
+    // Handle adding candidate to a new job
+    if ((req.body as any).addToJob) {
+      const newJobId = (req.body as any).addToJob;
+      const existingJobIds = (candidate as any).jobIds || [];
+
+      // Check if already assigned to this job
+      if (!existingJobIds.includes(newJobId)) {
+        // Get the pipeline for this job to get the first stage
+        const pipeline = await pipelineService.findByJobId(newJobId);
+        const firstStage = pipeline?.stages?.[0];
+
+        // Add to jobIds array
+        (updates as any).jobIds = [...existingJobIds, newJobId];
+
+        // Add new jobApplication entry
+        const existingJobApplications =
+          (candidate as any).jobApplications || [];
+        const newJobApplication = {
+          jobId: newJobId,
+          status: "active",
+          appliedAt: new Date(),
+          lastStatusChange: new Date(),
+          currentStage: firstStage?.id || null, // Set to first stage of pipeline
+          emailIds: [],
+          emailsSent: 0,
+          emailsReceived: 0,
+        };
+
+        (updates as any).jobApplications = [
+          ...existingJobApplications,
+          newJobApplication,
+        ];
+        logger.info(
+          `Added candidate to new job ${newJobId}, initial stage: ${firstStage?.name}`
+        );
+      }
+    }
+
     // Update candidate
     await candidateService.update(id, updates as any);
 
@@ -533,14 +645,18 @@ export const updateCandidate = asyncHandler(
     let updatedCandidate = await candidateService.findById(id);
 
     // Populate job and client information (same logic as getCandidates)
-    if (updatedCandidate && (updatedCandidate as any).jobIds && (updatedCandidate as any).jobIds.length > 0) {
+    if (
+      updatedCandidate &&
+      (updatedCandidate as any).jobIds &&
+      (updatedCandidate as any).jobIds.length > 0
+    ) {
       try {
         const firstJobId = (updatedCandidate as any).jobIds[0];
         const job = await jobService.findById(firstJobId);
-        
+
         if (job && (job as any).clientId) {
           const client = await clientService.findById((job as any).clientId);
-          
+
           if (client) {
             // Populate client in job
             (job as any).clientId = {
@@ -550,12 +666,18 @@ export const updateCandidate = asyncHandler(
               logo: (client as any).logo,
             };
           }
-          
+
           // Replace first jobId with populated job object
-          (updatedCandidate as any).jobIds = [job, ...(updatedCandidate as any).jobIds.slice(1)];
+          (updatedCandidate as any).jobIds = [
+            job,
+            ...(updatedCandidate as any).jobIds.slice(1),
+          ];
         }
       } catch (error) {
-        logger.warn('Failed to populate job/client for updated candidate:', error);
+        logger.warn(
+          "Failed to populate job/client for updated candidate:",
+          error
+        );
       }
     }
 
@@ -564,12 +686,15 @@ export const updateCandidate = asyncHandler(
     // Log activity
     if (req.user?.id && updatedCandidate) {
       const activityMetadata: any = {};
-      
+
       // Track specific changes
-      if ((updates as any).status && (updates as any).status !== (candidate as any).status) {
+      if (
+        (updates as any).status &&
+        (updates as any).status !== (candidate as any).status
+      ) {
         activityMetadata.oldStatus = (candidate as any).status;
         activityMetadata.newStatus = (updates as any).status;
-        
+
         // Log separate activity for status change
         logActivity({
           userId: req.user.id,
@@ -631,7 +756,7 @@ export const updateCandidate = asyncHandler(
             `Candidate assignment notification email sent to ${assignedUser.email}`
           );
         }
-        
+
         // Log assignment activity
         if (req.user?.id && updatedCandidate) {
           logActivity({
@@ -672,26 +797,29 @@ export const deleteCandidate = asyncHandler(
     // 🔒 RBAC: Non-admin users can only delete candidates assigned to them
     const userRole = (req.user as any)?.role;
     const userId = (req.user as any)?.id;
-    
-    if (userRole !== 'admin' && userId) {
+
+    if (userRole !== "admin" && userId) {
       const assignedTo = (candidate as any).assignedTo;
       let isAssigned = false;
-      
-      if (typeof assignedTo === 'string') {
+
+      if (typeof assignedTo === "string") {
         isAssigned = assignedTo === userId;
-      } else if (assignedTo && typeof assignedTo === 'object') {
+      } else if (assignedTo && typeof assignedTo === "object") {
         isAssigned = assignedTo.id === userId || assignedTo._id === userId;
       }
-      
+
       if (!isAssigned) {
         throw new NotFoundError("Candidate not found");
       }
     }
 
     // Check if candidate has any team members assigned
-    if ((candidate as any).assignedTeamMembers && (candidate as any).assignedTeamMembers.length > 0) {
+    if (
+      (candidate as any).assignedTeamMembers &&
+      (candidate as any).assignedTeamMembers.length > 0
+    ) {
       throw new CustomValidationError(
-        `Cannot delete candidate with ${(candidate as any).assignedTeamMembers.length} assigned team member${(candidate as any).assignedTeamMembers.length > 1 ? 's' : ''}. Please unassign all team members first.`
+        `Cannot delete candidate with ${(candidate as any).assignedTeamMembers.length} assigned team member${(candidate as any).assignedTeamMembers.length > 1 ? "s" : ""}. Please unassign all team members first.`
       );
     }
 
@@ -745,7 +873,7 @@ export const moveCandidateStage = asyncHandler(
         resourceType: "candidate",
         resourceId: id,
         resourceName: `${updatedCandidate.firstName} ${updatedCandidate.lastName}`,
-        metadata: { 
+        metadata: {
           stageId: newStage,
           notes: notes ? "Added notes" : undefined,
         },
@@ -985,23 +1113,23 @@ export const getCandidatesWithoutPipeline = asyncHandler(
 
     // Find candidates for this job that have no pipeline stage assigned
     let allCandidates = await candidateService.findByJobId(jobId as string);
-    
+
     // 🔒 RBAC: Non-admin users can only see candidates assigned to them
     const userRole = (req.user as any)?.role;
     const userId = (req.user as any)?.id;
-    
-    if (userRole !== 'admin' && userId) {
+
+    if (userRole !== "admin" && userId) {
       allCandidates = allCandidates.filter((c: any) => {
         const assignedTo = c.assignedTo;
-        if (typeof assignedTo === 'string') {
+        if (typeof assignedTo === "string") {
           return assignedTo === userId;
-        } else if (assignedTo && typeof assignedTo === 'object') {
+        } else if (assignedTo && typeof assignedTo === "object") {
           return assignedTo.id === userId || assignedTo._id === userId;
         }
         return false;
       });
     }
-    
+
     const candidates = allCandidates.filter(
       (c: any) => !c.currentPipelineStageId || c.currentPipelineStageId === null
     );
@@ -1031,13 +1159,13 @@ export const getCandidateStats = asyncHandler(
     // 🔒 RBAC: Non-admin users can only see stats for candidates assigned to them
     const userRole = (req.user as any)?.role;
     const userId = (req.user as any)?.id;
-    
-    if (userRole !== 'admin' && userId) {
+
+    if (userRole !== "admin" && userId) {
       allCandidates = allCandidates.filter((c: any) => {
         const assignedTo = c.assignedTo;
-        if (typeof assignedTo === 'string') {
+        if (typeof assignedTo === "string") {
           return assignedTo === userId;
-        } else if (assignedTo && typeof assignedTo === 'object') {
+        } else if (assignedTo && typeof assignedTo === "object") {
           return assignedTo.id === userId || assignedTo._id === userId;
         }
         return false;

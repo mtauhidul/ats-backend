@@ -1,23 +1,33 @@
-import { Request, Response } from 'express';
-import { pipelineService, jobService } from '../services/firestore';
-import { asyncHandler, successResponse, paginateResults } from '../utils/helpers';
-import { NotFoundError, ValidationError as CustomValidationError, BadRequestError } from '../utils/errors';
-import logger from '../utils/logger';
+import { Request, Response } from "express";
+import { candidateService, jobService, pipelineService } from "../services/firestore";
 import {
   CreatePipelineInput,
   ListPipelinesQuery,
-} from '../types/pipeline.types';
+} from "../types/pipeline.types";
+import {
+  BadRequestError,
+  ValidationError as CustomValidationError,
+  NotFoundError,
+} from "../utils/errors";
+import {
+  asyncHandler,
+  paginateResults,
+  successResponse,
+} from "../utils/helpers";
+import logger from "../utils/logger";
 
 /**
  * Create new pipeline
  */
 export const createPipeline = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const data: CreatePipelineInput = req.body;
+    const data: CreatePipelineInput & { jobId?: string } = req.body;
 
     // Check for duplicate pipeline name
     const allPipelines = await pipelineService.find([]);
-    const existingPipeline = allPipelines.find((p: any) => p.name === data.name);
+    const existingPipeline = allPipelines.find(
+      (p: any) => p.name === data.name
+    );
 
     if (existingPipeline) {
       throw new CustomValidationError(
@@ -42,9 +52,64 @@ export const createPipeline = asyncHandler(
 
     const pipeline = await pipelineService.findById(pipelineId);
 
+    // CRITICAL: If this pipeline is linked to a job, update all candidates
+    // with null stages for that job to use the first stage
+    if (data.jobId && pipeline?.stages && pipeline.stages.length > 0) {
+      const firstStageId = pipeline.stages[0].id;
+
+      // Get all candidates for this job
+      const allCandidates = await candidateService.find([]);
+      const jobCandidates = allCandidates.filter((c: any) => {
+        const jobIds = c.jobIds || [];
+        return jobIds.some((jid: any) => {
+          const id = typeof jid === "string" ? jid : jid?.id;
+          return id === data.jobId;
+        });
+      });
+
+      // Update candidates with null/invalid stages for this job
+      let updatedCount = 0;
+      for (const candidate of jobCandidates) {
+        const jobApplications = candidate.jobApplications || [];
+        let needsUpdate = false;
+
+        const updatedJobApplications = jobApplications.map((app: any) => {
+          const appJobId =
+            typeof app.jobId === "string" ? app.jobId : app.jobId?.id;
+
+          // If this is the job we created pipeline for and stage is null/invalid
+          if (
+            appJobId === data.jobId &&
+            (!app.currentStage || app.currentStage === "new")
+          ) {
+            needsUpdate = true;
+            return {
+              ...app,
+              currentStage: firstStageId,
+              lastStatusChange: new Date(),
+            };
+          }
+          return app;
+        });
+
+        if (needsUpdate) {
+          await candidateService.update(candidate.id, {
+            jobApplications: updatedJobApplications,
+          } as any);
+          updatedCount++;
+        }
+      }
+
+      if (updatedCount > 0) {
+        logger.info(
+          `Auto-assigned ${updatedCount} candidates to first stage of pipeline ${pipeline.name}`
+        );
+      }
+    }
+
     logger.info(`Pipeline created: ${pipeline?.name} by user ${req.user?.id}`);
 
-    successResponse(res, pipeline, 'Pipeline created successfully', 201);
+    successResponse(res, pipeline, "Pipeline created successfully", 201);
   }
 );
 
@@ -57,8 +122,8 @@ export const getPipelines = asyncHandler(
       page = 1,
       limit = 10,
       search,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
+      sortBy = "createdAt",
+      sortOrder = "desc",
     } = req.query as any as ListPipelinesQuery;
 
     // Get all pipelines
@@ -67,9 +132,10 @@ export const getPipelines = asyncHandler(
     // Apply search filter
     if (search) {
       const searchLower = search.toLowerCase();
-      allPipelines = allPipelines.filter((pipeline: any) =>
-        pipeline.name?.toLowerCase().includes(searchLower) ||
-        pipeline.description?.toLowerCase().includes(searchLower)
+      allPipelines = allPipelines.filter(
+        (pipeline: any) =>
+          pipeline.name?.toLowerCase().includes(searchLower) ||
+          pipeline.description?.toLowerCase().includes(searchLower)
       );
     }
 
@@ -88,8 +154,8 @@ export const getPipelines = asyncHandler(
     allPipelines.sort((a: any, b: any) => {
       const aVal = a[sortBy];
       const bVal = b[sortBy];
-      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
+      if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
 
@@ -100,7 +166,7 @@ export const getPipelines = asyncHandler(
     // Ensure stages is an array for each pipeline (handle Firestore serialization)
     const pipelinesWithArrayStages = pipelines.map((pipeline: any) => {
       let stages = pipeline.stages;
-      if (stages && !Array.isArray(stages) && typeof stages === 'object') {
+      if (stages && !Array.isArray(stages) && typeof stages === "object") {
         stages = Object.values(stages);
       }
       return {
@@ -115,7 +181,7 @@ export const getPipelines = asyncHandler(
         pipelines: pipelinesWithArrayStages,
         pagination,
       },
-      'Pipelines retrieved successfully'
+      "Pipelines retrieved successfully"
     );
   }
 );
@@ -130,7 +196,7 @@ export const getPipelineById = asyncHandler(
     const pipeline = await pipelineService.findById(id);
 
     if (!pipeline) {
-      throw new NotFoundError('Pipeline not found');
+      throw new NotFoundError("Pipeline not found");
     }
 
     // Get job count using this pipeline
@@ -139,7 +205,7 @@ export const getPipelineById = asyncHandler(
 
     // Ensure stages is an array (handle Firestore serialization)
     let stages = (pipeline as any).stages;
-    if (stages && !Array.isArray(stages) && typeof stages === 'object') {
+    if (stages && !Array.isArray(stages) && typeof stages === "object") {
       stages = Object.values(stages);
     }
 
@@ -150,7 +216,7 @@ export const getPipelineById = asyncHandler(
         stages,
         jobCount,
       },
-      'Pipeline retrieved successfully'
+      "Pipeline retrieved successfully"
     );
   }
 );
@@ -166,7 +232,7 @@ export const updatePipeline = asyncHandler(
     const pipeline = await pipelineService.findById(id);
 
     if (!pipeline) {
-      throw new NotFoundError('Pipeline not found');
+      throw new NotFoundError("Pipeline not found");
     }
 
     // Check for duplicate name if name is being updated
@@ -177,7 +243,7 @@ export const updatePipeline = asyncHandler(
       );
 
       if (existingPipeline) {
-        throw new BadRequestError('Pipeline with this name already exists');
+        throw new BadRequestError("Pipeline with this name already exists");
       }
     }
 
@@ -219,7 +285,7 @@ export const updatePipeline = asyncHandler(
 
     const updatedPipeline = await pipelineService.findById(id);
 
-    successResponse(res, updatedPipeline, 'Pipeline updated successfully');
+    successResponse(res, updatedPipeline, "Pipeline updated successfully");
   }
 );
 
@@ -233,13 +299,13 @@ export const deletePipeline = asyncHandler(
     const pipeline = await pipelineService.findById(id);
 
     if (!pipeline) {
-      throw new NotFoundError('Pipeline not found');
+      throw new NotFoundError("Pipeline not found");
     }
 
     // Check if this is the default pipeline
     if (pipeline.isDefault) {
       throw new CustomValidationError(
-        'Cannot delete the default pipeline. Please set another pipeline as default first.'
+        "Cannot delete the default pipeline. Please set another pipeline as default first."
       );
     }
 
@@ -257,7 +323,7 @@ export const deletePipeline = asyncHandler(
 
     logger.info(`Pipeline deleted: ${pipeline.name}`);
 
-    successResponse(res, null, 'Pipeline deleted successfully');
+    successResponse(res, null, "Pipeline deleted successfully");
   }
 );
 
@@ -270,9 +336,9 @@ export const getDefaultPipeline = asyncHandler(
     const pipeline = allPipelines.find((p: any) => p.isDefault === true);
 
     if (!pipeline) {
-      throw new NotFoundError('No default pipeline found');
+      throw new NotFoundError("No default pipeline found");
     }
 
-    successResponse(res, pipeline, 'Default pipeline retrieved successfully');
+    successResponse(res, pipeline, "Default pipeline retrieved successfully");
   }
 );
